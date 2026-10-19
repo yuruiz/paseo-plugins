@@ -1,0 +1,10 @@
+{
+  "id": "secrets",
+  "description": "Private text and image input for Paseo agents, with one-use execution grants and user-reviewed image output.",
+  "requirements": {
+    "paseo": ">=0.11.2"
+  },
+  "build": [["npm", "ci", "--omit=dev", "--ignore-scripts"]],
+  "name": "Secrets",
+  "media": ["assets/private-input.png", "assets/output-review.png"]
+}
