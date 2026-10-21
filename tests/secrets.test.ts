@@ -1442,3 +1442,34 @@ test("Connect does not bypass a failing proxy even when its destination is direc
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("agent loopback bypass preserves inherited, provider and session exclusions without changing proxies", async () => {
+  const { withLoopbackBypass } = await import("../server/agent-configuration.js");
+  expect(
+    withLoopbackBypass({
+      env: {
+        no_proxy: " session.internal,localhost ",
+        KEEP: "value",
+        HTTP_PROXY: "http://proxy.example:8080",
+      },
+      inheritedEnv: { NO_PROXY: "inherited.internal", no_proxy: "lower.internal" },
+      providerEnv: { NO_PROXY: "provider.internal,inherited.internal" },
+    }),
+  ).toEqual({
+    KEEP: "value",
+    HTTP_PROXY: "http://proxy.example:8080",
+    NO_PROXY:
+      "inherited.internal,lower.internal,provider.internal,session.internal,localhost,127.0.0.1,::1",
+    no_proxy:
+      "inherited.internal,lower.internal,provider.internal,session.internal,localhost,127.0.0.1,::1",
+  });
+  const clean = withLoopbackBypass({ env: {}, inheritedEnv: {}, providerEnv: {} });
+  expect(clean).toEqual({
+    NO_PROXY: "127.0.0.1,localhost,::1",
+    no_proxy: "127.0.0.1,localhost,::1",
+  });
+  expect(withLoopbackBypass({ env: clean, inheritedEnv: {}, providerEnv: {} })).toEqual(clean);
+  expect(withLoopbackBypass({ env: {}, inheritedEnv: { NO_PROXY: "*" }, providerEnv: {} })).toEqual(
+    { NO_PROXY: "*,127.0.0.1,localhost,::1", no_proxy: "*,127.0.0.1,localhost,::1" },
+  );
+});

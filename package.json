@@ -1,6 +1,6 @@
 {
   "name": "paseo-plugin-secrets",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "description": "Private inputs with one-use execution grants, plus 1Password Connect access and item browsing for Paseo agents.",
   "homepage": "https://github.com/yuruiz/paseo-secrets#readme",

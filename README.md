@@ -5,7 +5,7 @@ See [OVERVIEW.md](OVERVIEW.md) for behavior, requirements, and security limits.
 Requires Paseo 0.11.2 or later, a macOS or Linux daemon, and npm on the daemon host. Enable trusted plugins in Paseo, then install the Git release:
 
 ```sh
-paseo plugin install https://github.com/yuruiz/paseo-secrets.git --ref v0.4.2
+paseo plugin install https://github.com/yuruiz/paseo-secrets.git --ref v0.4.3
 ```
 
 The private-input workflow exposes these MCP tools:
@@ -18,7 +18,9 @@ Select **Secrets** in the composer to create a grant manually. `/secrets` or **P
 
 The plugin hosts an official-SDK Streamable HTTP MCP server bound to `127.0.0.1`. It exposes the private-input tools above and the Connect tools below, with no raw-input or grant-listing MCP tool. Output reading is gated by the separate client approval RPC. The grant ID authorizes one execution; keep it private. Browser-origin requests are rejected. This local endpoint does not replace the existing app-to-daemon connection used to submit secrets. The port is saved in `$PASEO_HOME/plugin-state/secrets-mcp/endpoint.json` so configurations remain valid after reload. That file contains no credentials. An occupied saved port fails explicitly rather than silently changing the endpoint.
 
-New Codex, Claude, OpenCode, and Copilot agents automatically receive the `paseo-secrets` MCP configuration. Internal agents and other providers are left unchanged. Existing agents need the endpoint added through their provider's MCP configuration and their session reloaded. The current plugin API cannot hot-add tools to an already-running session. Other MCP-capable providers can configure the same local endpoint manually. Do not expose this endpoint on the network.
+New Codex, Claude, OpenCode, and Copilot agents automatically receive the `paseo-secrets` MCP configuration. Internal agents and other providers are left unchanged. Existing agents need the endpoint added through their provider's MCP configuration and their session reloaded. Reloading an agent that predates plugin installation does not run the creation hook and cannot add a missing MCP entry by itself. The current plugin API cannot hot-add tools to an already-running session. Other MCP-capable providers can configure the same local endpoint manually. Do not expose this endpoint on the network.
+
+For supported providers, the plugin appends `127.0.0.1`, `localhost` and `::1` to both `NO_PROXY` and `no_proxy` when an interactive session opens (create, resume, refresh or import). Existing exclusions from the inherited, provider and session environments are preserved. This keeps the agent’s local MCP connection out of HTTP/SOCKS proxies while Connect’s outbound requests continue using the saved Connect proxy. Running sessions need a reload to receive the updated environment.
 
 For an existing Codex setup, register the local endpoint once using `codex mcp add paseo-secrets --url http://127.0.0.1:PORT/mcp`, replacing `PORT` with the saved port. Then reload the agent session. Clients with a tool timeout below two minutes may cancel execution earlier; increase that client's MCP tool timeout when longer commands are needed.
 

@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { supportedProviders, withLoopbackBypass } from "./server/agent-configuration.js";
 import {
   configureConnect,
   setConnectEnabled,
@@ -94,11 +96,20 @@ export default function contribute(server: PluginServerContext) {
     api = paseo;
     return { url: (await runtime).url };
   });
+  server.before("agent.session_open", async ({ request }, { paseo }) => {
+    api = paseo;
+    if (request.purpose !== "interactive" || !supportedProviders.includes(request.provider))
+      return request;
+    const { config } = await paseo.config.get();
+    const provider = z
+      .object({ env: z.record(z.string(), z.string()).optional() })
+      .parse(config.providers[request.provider] ?? {});
+    return { ...request, env: withLoopbackBypass({ env: request.env, providerEnv: provider.env }) };
+  });
   server.before("agent.create", async ({ request }, { paseo }) => {
     api = paseo;
     // Other providers can opt in through their own MCP configuration.
-    if (!["codex", "claude", "opencode", "copilot"].includes(request.config.provider))
-      return request;
+    if (!supportedProviders.includes(request.config.provider)) return request;
     if (request.config.internal) return request;
     const { url } = await runtime;
     const existing = request.config.mcpServers?.["paseo-secrets"];
