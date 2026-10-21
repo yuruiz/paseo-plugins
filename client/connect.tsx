@@ -9,6 +9,7 @@ import {
   configureConnect,
   connectStatus,
   setConnectEnabled,
+  setConnectProxy,
   deleteConnect,
   testConnect,
 } from "../shared/onepassword.js";
@@ -17,16 +18,18 @@ import { QuestionButton, useQuestionStyles } from "./question-ui.js";
 interface FormState {
   url: string;
   token: string;
+  proxyUrl: string;
   status: "idle" | "pending" | "saved" | "error";
   message: string;
 }
 type Action =
   | { type: "url"; value: string }
   | { type: "token"; value: string }
+  | { type: "proxyUrl"; value: string }
   | { type: "pending" }
   | { type: "saved" | "error"; message: string };
 function reduce(state: FormState, action: Action): FormState {
-  if (action.type === "url" || action.type === "token")
+  if (action.type === "url" || action.type === "token" || action.type === "proxyUrl")
     return { ...state, [action.type]: action.value, status: "idle", message: "" };
   if (action.type === "pending") return { ...state, token: "", status: "pending", message: "" };
   return { ...state, token: "", status: action.type, message: action.message };
@@ -65,17 +68,20 @@ interface ConnectFormProps extends PluginSurfaceProps {
 function ConnectForm({ host, theme, layout, saved, queryKey }: ConnectFormProps) {
   const configure = useRpc(configureConnect);
   const setEnabled = useRpc(setConnectEnabled);
+  const setProxy = useRpc(setConnectProxy);
   const deleteConfiguration = useRpc(deleteConnect);
   const testConnection = useRpc(testConnect);
   const cache = useQueryClient();
   const [form, dispatch] = useReducer(reduce, {
     url: saved.url ?? "",
     token: "",
+    proxyUrl: saved.proxyUrl ?? "",
     status: "idle",
     message: "",
   });
   const styles = useQuestionStyles(theme, layout.compact);
   const editUrl = useCallback((value: string) => dispatch({ type: "url", value }), []);
+  const editProxy = useCallback((value: string) => dispatch({ type: "proxyUrl", value }), []);
   const editToken = useCallback((value: string) => dispatch({ type: "token", value }), []);
   const run = useCallback(
     (operation: () => Promise<string>, failure: string) => {
@@ -94,12 +100,22 @@ function ConnectForm({ host, theme, layout, saved, queryKey }: ConnectFormProps)
     [cache, queryKey, host.id],
   );
   const save = useCallback(() => {
-    const input = { url: form.url.trim(), token: form.token };
+    const input = {
+      url: form.url.trim(),
+      token: form.token,
+      proxyUrl: form.proxyUrl.trim() || null,
+    };
     run(async () => {
       await configure(input);
       return "Configuration saved. Connect access is enabled.";
     }, "Could not save Connect. Check the URL, host connection and storage permissions; re-enter the token to retry.");
-  }, [configure, form.url, form.token, run]);
+  }, [configure, form.url, form.token, form.proxyUrl, run]);
+  const saveProxy = useCallback(() => {
+    run(async () => {
+      await setProxy({ proxyUrl: form.proxyUrl.trim() || null });
+      return "Proxy saved. The Connect token and agent access setting are unchanged.";
+    }, "Could not save the proxy. Use an HTTP(S) or SOCKS5 proxy URL without credentials or a path, and check host storage permissions.");
+  }, [setProxy, form.proxyUrl, run]);
   const toggle = useCallback(() => {
     run(async () => {
       await setEnabled({ enabled: !saved.enabled });
@@ -118,9 +134,10 @@ function ConnectForm({ host, theme, layout, saved, queryKey }: ConnectFormProps)
     run(async () => {
       const result = await testConnection({});
       return `Connection successful. ${result.vaultCount} accessible vault(s). Write permissions were not tested.`;
-    }, "Connection test failed. Check the saved URL, token permissions and Connect server availability. Save any changes before testing again.");
+    }, "Connection test failed. Check the saved URL, proxy, token permissions and Connect server availability. Save any changes before testing again.");
   }, [testConnection, run]);
   const pending = form.status === "pending";
+  const configuredActionDisabled = pending || !saved.configured;
   const canDelete = saved.configured || saved.error !== null;
   const access = saved.enabled ? "Enabled" : "Disabled";
   return (
@@ -153,6 +170,26 @@ function ConnectForm({ host, theme, layout, saved, queryKey }: ConnectFormProps)
           style={styles.input}
         />
         <TextInput
+          accessibilityLabel="Connect proxy URL"
+          value={form.proxyUrl}
+          onChangeText={editProxy}
+          placeholder="Optional: socks5h://127.0.0.1:1055"
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!pending}
+          style={styles.input}
+        />
+        <Text style={styles.muted}>
+          Blank uses a direct connection. HTTP(S), socks5 and socks5h proxies are supported. Use
+          socks5h for proxy-side DNS. The proxy runs on the daemon host.
+        </Text>
+        <QuestionButton
+          theme={theme}
+          label="Save proxy"
+          onPress={saveProxy}
+          disabled={configuredActionDisabled}
+        />
+        <TextInput
           accessibilityLabel="Connect token"
           value={form.token}
           onChangeText={editToken}
@@ -178,13 +215,13 @@ function ConnectForm({ host, theme, layout, saved, queryKey }: ConnectFormProps)
             theme={theme}
             label="Test saved connection"
             onPress={test}
-            disabled={pending || !saved.configured}
+            disabled={configuredActionDisabled}
           />
           <QuestionButton
             theme={theme}
             label={saved.enabled ? "Disable access" : "Enable access"}
             onPress={toggle}
-            disabled={pending || !saved.configured}
+            disabled={configuredActionDisabled}
           />
           <QuestionButton
             theme={theme}

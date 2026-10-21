@@ -1,7 +1,26 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 
+export const connectProxySchema = z
+  .string()
+  .url()
+  .max(2048)
+  .refine((value) => {
+    const url = new URL(value);
+    return (
+      ["http:", "https:", "socks5:", "socks5h:"].includes(url.protocol) &&
+      Boolean(url.hostname) &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      ["", "/"].includes(url.pathname)
+    );
+  }, "Use an HTTP(S) or SOCKS5 proxy URL without credentials or a path.")
+  .nullable();
+
 export const connectConfigurationSchema = z.object({
+  proxyUrl: connectProxySchema.default(null),
   url: z
     .string()
     .url()
@@ -27,6 +46,11 @@ export const configureConnect = defineRpc({
   input: connectConfigurationSchema,
   output: z.object({ configured: z.literal(true) }),
 });
+export const setConnectProxy = defineRpc({
+  name: "secrets.connect.proxy",
+  input: z.object({ proxyUrl: connectProxySchema }),
+  output: z.object({ proxyUrl: connectProxySchema }),
+});
 export const setConnectEnabled = defineRpc({
   name: "secrets.connect.enabled",
   input: z.object({ enabled: z.boolean() }),
@@ -47,6 +71,7 @@ export const connectStatus = defineRpc({
   input: z.object({}),
   output: z.object({
     configured: z.boolean(),
+    proxyUrl: connectProxySchema.default(null),
     enabled: z.boolean(),
     url: z.string().nullable(),
     error: z.string().nullable(),

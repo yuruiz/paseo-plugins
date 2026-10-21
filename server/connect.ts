@@ -6,12 +6,14 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   connectConfigurationSchema,
+  connectProxySchema,
   connectIdSchema,
   connectVaultSchema,
   connectItemSummarySchema,
 } from "../shared/onepassword.js";
 
-export class ConnectError extends Error {}
+import { ConnectError } from "./errors.js";
+import { requestConnect } from "./connect-http.js";
 
 const storedConfigurationSchema = connectConfigurationSchema.extend({
   version: z.literal(1),
@@ -91,10 +93,19 @@ export class OnePasswordConnect {
     this.loadError = null;
   }
 
-  configure(input: z.infer<typeof connectConfigurationSchema>) {
+  configure(input: z.input<typeof connectConfigurationSchema>) {
     const parsed = connectConfigurationSchema.safeParse(input);
     if (!parsed.success) return Promise.reject(new ConnectError("Invalid Connect URL or token."));
     return this.enqueue(() => this.persist({ ...parsed.data, version: 1, enabled: true }));
+  }
+
+  setProxy(proxyUrl: z.infer<typeof connectProxySchema>) {
+    const parsed = connectProxySchema.safeParse(proxyUrl);
+    if (!parsed.success) return Promise.reject(new ConnectError("Invalid Connect proxy URL."));
+    return this.enqueue(async () => {
+      if (!this.configuration) throw new ConnectError("Configure 1Password Connect first.");
+      await this.persist({ ...this.configuration, proxyUrl: parsed.data });
+    });
   }
 
   setEnabled(enabled: boolean) {
@@ -129,6 +140,7 @@ export class OnePasswordConnect {
   status() {
     return {
       configured: this.configuration !== null,
+      proxyUrl: this.configuration?.proxyUrl ?? null,
       enabled: this.configuration?.enabled ?? false,
       url: this.configuration?.url ?? null,
       error: this.loadError,
@@ -187,38 +199,19 @@ export class OnePasswordConnect {
     signal.addEventListener("abort", cancel, { once: true });
     if (signal.aborted) cancel();
     const timeout = setTimeout(cancel, 30_000);
-    const payload = method === "GET" ? {} : { body: JSON.stringify(body) };
     try {
-      const response = await fetch(url, {
+      return await requestConnect({
+        url,
         method,
-        headers: {
-          Authorization: `Bearer ${configuration.token}`,
-          "Content-Type": "application/json",
-        },
-        ...payload,
-        redirect: "error",
+        body,
+        token: configuration.token,
+        proxyUrl: configuration.proxyUrl,
         signal: controller.signal,
       });
-      if (!response.ok) {
-        await response.body?.cancel();
-        throw new ConnectError(
-          `1Password Connect returned HTTP ${response.status}. Check token permissions and vault/item IDs.`,
-        );
-      }
-      const chunks: Uint8Array[] = [];
-      let size = 0;
-      if (!response.body) throw new ConnectError("1Password Connect returned an empty response.");
-      for await (const chunk of response.body) {
-        size += chunk.length;
-        if (size > 2 * 1024 * 1024)
-          throw new ConnectError("1Password Connect response exceeds 2 MiB.");
-        chunks.push(chunk);
-      }
-      return z.json().parse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
     } catch (error) {
       if (error instanceof ConnectError) throw error;
       throw new ConnectError(
-        "1Password Connect request failed. Check connectivity and configuration.",
+        "1Password Connect request failed. Check connectivity, proxy and configuration.",
       );
     } finally {
       this.active.delete(controller);

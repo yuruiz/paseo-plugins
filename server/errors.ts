@@ -10,3 +10,5 @@ export class SecretsError extends Error {
     super(messages[code]);
   }
 }
+
+export class ConnectError extends Error {}

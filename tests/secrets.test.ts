@@ -647,6 +647,7 @@ test("Connect tools perform list, read, create and replace through HTTP and disc
     });
     expect(runtime.connect.status()).toEqual({
       configured: true,
+      proxyUrl: null,
       enabled: true,
       error: null,
       url: `http://127.0.0.1:${address.port}/`,
@@ -728,6 +729,7 @@ test("Connect tools perform list, read, create and replace through HTTP and disc
     await runtime.connect.remove();
     expect(runtime.connect.status()).toEqual({
       configured: false,
+      proxyUrl: null,
       enabled: false,
       url: null,
       error: null,
@@ -765,13 +767,25 @@ test("Connect disconnect cancels an outstanding HTTP request and invalid configu
     await expect(
       connect.configure({ url: "https://user:password@example.com", token: "replacement-token" }),
     ).rejects.toThrow("Invalid Connect URL or token.");
-    expect(connect.status()).toEqual({ configured: true, enabled: true, url, error: null });
+    expect(connect.status()).toEqual({
+      configured: true,
+      proxyUrl: null,
+      enabled: true,
+      url,
+      error: null,
+    });
     const pending = connect.request("GET", "vaults", undefined, new AbortController().signal);
     const rejected = expect(pending).rejects.toThrow("1Password Connect request failed");
     await requested;
     await connect.remove();
     await rejected;
-    expect(connect.status()).toEqual({ configured: false, enabled: false, url: null, error: null });
+    expect(connect.status()).toEqual({
+      configured: false,
+      proxyUrl: null,
+      enabled: false,
+      url: null,
+      error: null,
+    });
   } finally {
     await connect.remove();
     await connect.close();
@@ -782,7 +796,7 @@ test("Connect disconnect cancels an outstanding HTTP request and invalid configu
 });
 
 test("Connect persists credentials privately across restart, disable/enable and deletion", async () => {
-  const { stat, chmod } = await import("node:fs/promises");
+  const { stat, chmod, writeFile } = await import("node:fs/promises");
   const stateDirectory = await mkdtemp(path.join(tmpdir(), "secrets-connect-persist-"));
   let runtime = await startRuntime({ stateDirectory });
   const url = "https://connect.example.com";
@@ -794,23 +808,40 @@ test("Connect persists credentials privately across restart, disable/enable and 
     expect((await stat(file)).mode & 0o777).toBe(0o600);
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
       version: 1,
+      proxyUrl: null,
       enabled: true,
       url,
       token: "persisted-test-token",
     });
-    expect(runtime.connect.status()).toEqual({ configured: true, enabled: true, url, error: null });
+    expect(runtime.connect.status()).toEqual({
+      configured: true,
+      proxyUrl: null,
+      enabled: true,
+      url,
+      error: null,
+    });
     await runtime.close();
+    const legacy = JSON.parse(await readFile(file, "utf8"));
+    delete legacy.proxyUrl;
+    await writeFile(file, JSON.stringify(legacy));
     await chmod(directory, 0o755);
     await chmod(file, 0o644);
     runtime = await startRuntime({ stateDirectory });
     expect((await stat(directory)).mode & 0o777).toBe(0o700);
     expect((await stat(file)).mode & 0o777).toBe(0o600);
-    expect(runtime.connect.status()).toEqual({ configured: true, enabled: true, url, error: null });
+    expect(runtime.connect.status()).toEqual({
+      configured: true,
+      proxyUrl: null,
+      enabled: true,
+      url,
+      error: null,
+    });
     await runtime.connect.setEnabled(false);
     await runtime.close();
     runtime = await startRuntime({ stateDirectory });
     expect(runtime.connect.status()).toEqual({
       configured: true,
+      proxyUrl: null,
       enabled: false,
       url,
       error: null,
@@ -819,13 +850,20 @@ test("Connect persists credentials privately across restart, disable/enable and 
       runtime.connect.request("GET", "vaults", undefined, new AbortController().signal),
     ).rejects.toThrow("disabled");
     await runtime.connect.setEnabled(true);
-    expect(runtime.connect.status()).toEqual({ configured: true, enabled: true, url, error: null });
+    expect(runtime.connect.status()).toEqual({
+      configured: true,
+      proxyUrl: null,
+      enabled: true,
+      url,
+      error: null,
+    });
     await runtime.connect.remove();
     await expect(readFile(file)).rejects.toMatchObject({ code: "ENOENT" });
     await runtime.close();
     runtime = await startRuntime({ stateDirectory });
     expect(runtime.connect.status()).toEqual({
       configured: false,
+      proxyUrl: null,
       enabled: false,
       url: null,
       error: null,
@@ -848,6 +886,7 @@ test("Connect preserves corrupt files for recovery and never exposes stored cred
   try {
     expect(connect.status()).toEqual({
       configured: false,
+      proxyUrl: null,
       enabled: false,
       url: null,
       error: "Stored Connect configuration could not be read. Replace or delete it.",
@@ -859,6 +898,7 @@ test("Connect preserves corrupt files for recovery and never exposes stored cred
     });
     expect(connect.status()).toEqual({
       configured: true,
+      proxyUrl: null,
       enabled: true,
       url: "https://connect.example.com",
       error: null,
@@ -872,6 +912,7 @@ test("Connect preserves corrupt files for recovery and never exposes stored cred
     ).rejects.toThrow("Could not save Connect configuration");
     expect(connect.status()).toEqual({
       configured: true,
+      proxyUrl: null,
       enabled: true,
       url: "https://connect.example.com",
       error: null,
@@ -882,6 +923,7 @@ test("Connect preserves corrupt files for recovery and never exposes stored cred
     await connect.setEnabled(false);
     expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
       version: 1,
+      proxyUrl: null,
       enabled: false,
       url: "https://connect.example.com",
       token: "private-replacement-value",
@@ -908,6 +950,7 @@ test("Connect serializes saves and waits for the last accepted write during shut
     const restored = await OnePasswordConnect.open(directory);
     expect(restored.status()).toEqual({
       configured: true,
+      proxyUrl: null,
       enabled: false,
       url: "https://second.example.com",
       error: null,
@@ -949,7 +992,13 @@ test("Connect connection tests use saved credentials without enabling access or 
     await connect.close();
     connect = await OnePasswordConnect.open(directory);
     expect(await connect.test()).toEqual({ vaultCount: 1 });
-    expect(connect.status()).toEqual({ configured: true, enabled: false, url, error: null });
+    expect(connect.status()).toEqual({
+      configured: true,
+      proxyUrl: null,
+      enabled: false,
+      url,
+      error: null,
+    });
     expect(requests).toEqual([
       { method: "GET", url: "/v1/vaults", authorization: "Bearer accepted-token" },
     ]);
@@ -1051,4 +1100,345 @@ test("Secrets state directory follows Paseo's default and custom home rules with
   expect(resolveStateDirectory({ PASEO_HOME: ".dev/paseo-home" })).toBe(
     path.resolve(".dev/paseo-home", "plugin-state", "secrets-mcp"),
   );
+});
+
+test("Connect uses an explicit HTTP proxy for metadata and writes, persists it, and never falls back to direct", async () => {
+  const { createServer } = await import("node:http");
+  const { OnePasswordConnect } = await import("../server/connect.js");
+  const seen: { method: string; url: string; authorization: string; body: string }[] = [];
+  const proxy = createServer((request, response) => {
+    void (async () => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      seen.push({
+        method: request.method!,
+        url: request.url!,
+        authorization: request.headers.authorization!,
+        body: Buffer.concat(chunks).toString("utf8"),
+      });
+      response.setHeader("Content-Type", "application/json");
+      response.end(
+        request.method === "GET" ? '[{"id":"vault","name":"Test"}]' : '{"id":"created"}',
+      );
+    })().catch(() => response.destroy());
+  });
+  await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+  const address = proxy.address();
+  if (!address || typeof address === "string") throw new Error("Missing proxy address");
+  const directory = await mkdtemp(path.join(tmpdir(), "connect-proxy-"));
+  let connect = await OnePasswordConnect.open(directory);
+  const proxyUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    await connect.configure({ url: "http://connect.invalid", token: "proxy-test-token", proxyUrl });
+    expect(await connect.listVaults()).toEqual([{ id: "vault", name: "Test" }]);
+    expect(
+      await connect.request(
+        "POST",
+        "vaults/vault/items",
+        { title: "Test" },
+        new AbortController().signal,
+      ),
+    ).toEqual({ id: "created" });
+    expect(seen).toEqual([
+      {
+        method: "GET",
+        url: "http://connect.invalid/v1/vaults",
+        authorization: "Bearer proxy-test-token",
+        body: "",
+      },
+      {
+        method: "POST",
+        url: "http://connect.invalid/v1/vaults/vault/items",
+        authorization: "Bearer proxy-test-token",
+        body: '{"title":"Test"}',
+      },
+    ]);
+    await connect.setEnabled(false);
+    await connect.close();
+    connect = await OnePasswordConnect.open(directory);
+    expect(connect.status().proxyUrl).toBe(proxyUrl);
+    expect(await connect.test()).toEqual({ vaultCount: 1 });
+    await connect.setProxy(null);
+    expect(connect.status().enabled).toBe(false);
+    expect(connect.status().proxyUrl).toBeNull();
+    await connect.setProxy(proxyUrl);
+    proxy.closeAllConnections();
+    await new Promise<void>((resolve) => proxy.close(() => resolve()));
+    await expect(connect.test()).rejects.toThrow("request failed");
+    expect(
+      JSON.parse(await readFile(path.join(directory, "configuration.json"), "utf8")).token,
+    ).toBe("proxy-test-token");
+  } finally {
+    await connect.close();
+    proxy.closeAllConnections();
+    await new Promise<void>((resolve) => proxy.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test.each([
+  { scheme: "socks5h", host: "connect.invalid" },
+  { scheme: "socks5", host: "127.0.0.1" },
+])(
+  "Connect sends requests through $scheme and resolves names on the requested side",
+  async ({ scheme, host }) => {
+    const net = await import("node:net");
+    const { createServer } = await import("node:http");
+    const { once } = await import("node:events");
+    const { OnePasswordConnect } = await import("../server/connect.js");
+    const upstream = createServer((request, response) => {
+      expect(request.headers.authorization).toBe("Bearer socks-test-token");
+      response.setHeader("Content-Type", "application/json");
+      response.end('[{"id":"vault","name":"Via SOCKS"}]');
+    });
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+    const target = upstream.address();
+    if (!target || typeof target === "string") throw new Error("Missing target address");
+    const sockets = new Set<import("node:net").Socket>();
+    const destinations: { host: string; port: number }[] = [];
+    const proxy = net.createServer((socket) => {
+      sockets.add(socket);
+      socket.on("close", () => sockets.delete(socket));
+      void handshake(socket).catch(() => socket.destroy());
+    });
+    async function handshake(socket: import("node:net").Socket) {
+      async function read(size: number): Promise<Buffer> {
+        let chunk = socket.read(size);
+        while (chunk === null) {
+          await once(socket, "readable");
+          if (socket.destroyed) throw new Error("Socket closed");
+          chunk = socket.read(size);
+        }
+        return Buffer.from(chunk);
+      }
+      const greeting = await read(2);
+      await read(greeting[1]);
+      socket.write(Buffer.from([5, 0]));
+      const header = await read(4);
+      let destination: string;
+      if (header[3] === 3) {
+        const length = await read(1);
+        destination = (await read(length[0])).toString("utf8");
+      } else {
+        destination = [...(await read(4))].join(".");
+      }
+      const port = (await read(2)).readUInt16BE();
+      destinations.push({ host: destination, port });
+      const outgoing = net.createConnection({ host: "127.0.0.1", port: target.port });
+      sockets.add(outgoing);
+      outgoing.on("close", () => sockets.delete(outgoing));
+      await once(outgoing, "connect");
+      socket.write(Buffer.from([5, 0, 0, 1, 127, 0, 0, 1, 0, 0]));
+      outgoing.on("error", () => socket.destroy());
+      socket.on("error", () => outgoing.destroy());
+      socket.pipe(outgoing).pipe(socket);
+    }
+    await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+    const address = proxy.address();
+    if (!address || typeof address === "string") throw new Error("Missing proxy address");
+    const directory = await mkdtemp(path.join(tmpdir(), "connect-socks-"));
+    const connect = await OnePasswordConnect.open(directory);
+    try {
+      await connect.configure({
+        url: `http://${host}:${target.port}`,
+        token: "socks-test-token",
+        proxyUrl: `${scheme}://127.0.0.1:${address.port}`,
+      });
+      expect(await connect.listVaults()).toEqual([{ id: "vault", name: "Via SOCKS" }]);
+      expect(destinations).toEqual([{ host, port: target.port }]);
+      await expect(connect.setProxy("file:///tmp/socket")).rejects.toThrow(
+        "Invalid Connect proxy URL",
+      );
+      await expect(connect.setProxy("http://user:password@127.0.0.1:1055")).rejects.toThrow(
+        "Invalid Connect proxy URL",
+      );
+      expect(connect.status().proxyUrl).toBe(`${scheme}://127.0.0.1:${address.port}`);
+    } finally {
+      await connect.close();
+      for (const socket of sockets) socket.destroy();
+      upstream.closeAllConnections();
+      await Promise.all([
+        new Promise<void>((resolve) => proxy.close(() => resolve())),
+        new Promise<void>((resolve) => upstream.close(() => resolve())),
+      ]);
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test("Connect aborts a stalled HTTPS proxy tunnel when its proxy configuration changes", async () => {
+  const { createServer } = await import("node:http");
+  const { OnePasswordConnect } = await import("../server/connect.js");
+  let arrived: () => void = () => {};
+  let disconnected: () => void = () => {};
+  const opened = new Promise<void>((resolve) => {
+    arrived = resolve;
+  });
+  const closed = new Promise<void>((resolve) => {
+    disconnected = resolve;
+  });
+  const requests: { method: string; url: string; authorization: string | undefined }[] = [];
+  const sockets = new Set<import("node:stream").Duplex>();
+  const proxy = createServer();
+  proxy.on("connect", (request, socket) => {
+    requests.push({
+      method: request.method!,
+      url: request.url!,
+      authorization: request.headers.authorization,
+    });
+    sockets.add(socket);
+    socket.on("data", () => {});
+    socket.once("end", () => socket.end());
+    socket.once("close", disconnected);
+    arrived();
+  });
+  await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+  const address = proxy.address();
+  if (!address || typeof address === "string") throw new Error("Missing proxy address");
+  const directory = await mkdtemp(path.join(tmpdir(), "connect-proxy-abort-"));
+  const connect = await OnePasswordConnect.open(directory);
+  try {
+    await connect.configure({
+      url: "https://connect.invalid",
+      token: "must-not-be-sent-before-tls",
+      proxyUrl: `http://127.0.0.1:${address.port}`,
+    });
+    const pending = expect(connect.test()).rejects.toThrow("request failed");
+    await opened;
+    await connect.setProxy(null);
+    await pending;
+    await closed;
+    expect(requests).toEqual([
+      { method: "CONNECT", url: "connect.invalid:443", authorization: undefined },
+    ]);
+  } finally {
+    await connect.close();
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => proxy.close(() => resolve()));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Connect rejects untrusted TLS certificates through an HTTP proxy", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { createServer } = await import("node:http");
+  const { createServer: createTlsServer } = await import("node:https");
+  const { createConnection } = await import("node:net");
+  const { OnePasswordConnect } = await import("../server/connect.js");
+  const directory = await mkdtemp(path.join(tmpdir(), "connect-proxy-tls-"));
+  execFileSync(
+    "openssl",
+    [
+      "req",
+      "-x509",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-keyout",
+      path.join(directory, "key.pem"),
+      "-out",
+      path.join(directory, "cert.pem"),
+      "-subj",
+      "/CN=localhost",
+      "-days",
+      "1",
+    ],
+    { stdio: "ignore" },
+  );
+  let requests = 0;
+  const upstream = createTlsServer(
+    {
+      key: await readFile(path.join(directory, "key.pem")),
+      cert: await readFile(path.join(directory, "cert.pem")),
+    },
+    (_, response) => {
+      requests++;
+      response.end("[]");
+    },
+  );
+  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  const target = upstream.address();
+  if (!target || typeof target === "string") throw new Error("Missing target address");
+  const sockets = new Set<import("node:stream").Duplex>();
+  const proxy = createServer();
+  proxy.on("connect", (_, socket, head) => {
+    const outgoing = createConnection({ host: "127.0.0.1", port: target.port }, () => {
+      socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+      if (head.length) outgoing.write(head);
+      socket.pipe(outgoing).pipe(socket);
+    });
+    sockets.add(socket);
+    sockets.add(outgoing);
+    outgoing.on("error", () => socket.destroy());
+    socket.on("error", () => outgoing.destroy());
+  });
+  await new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve));
+  const address = proxy.address();
+  if (!address || typeof address === "string") throw new Error("Missing proxy address");
+  const connect = await OnePasswordConnect.open(path.join(directory, "state"));
+  try {
+    await connect.configure({
+      url: `https://localhost:${target.port}`,
+      token: "not-sent-to-untrusted-server",
+      proxyUrl: `http://127.0.0.1:${address.port}`,
+    });
+    await expect(connect.test()).rejects.toThrow("request failed");
+    expect(requests).toBe(0);
+  } finally {
+    await connect.close();
+    for (const socket of sockets) socket.destroy();
+    upstream.closeAllConnections();
+    await Promise.all([
+      new Promise<void>((resolve) => proxy.close(() => resolve())),
+      new Promise<void>((resolve) => upstream.close(() => resolve())),
+    ]);
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Connect does not bypass a failing proxy even when its destination is directly reachable", async () => {
+  const { createServer } = await import("node:http");
+  const { OnePasswordConnect } = await import("../server/connect.js");
+  let directRequests = 0;
+  const target = createServer((_, response) => {
+    directRequests++;
+    response.end("[]");
+  });
+  const proxy = createServer((_, response) => response.writeHead(503).end("private-proxy-error"));
+  await Promise.all([
+    new Promise<void>((resolve) => target.listen(0, "127.0.0.1", resolve)),
+    new Promise<void>((resolve) => proxy.listen(0, "127.0.0.1", resolve)),
+  ]);
+  const targetAddress = target.address();
+  const proxyAddress = proxy.address();
+  if (
+    !targetAddress ||
+    typeof targetAddress === "string" ||
+    !proxyAddress ||
+    typeof proxyAddress === "string"
+  )
+    throw new Error("Missing addresses");
+  const directory = await mkdtemp(path.join(tmpdir(), "connect-no-proxy-bypass-"));
+  const connect = await OnePasswordConnect.open(directory);
+  try {
+    await connect.configure({
+      url: `http://127.0.0.1:${targetAddress.port}`,
+      token: "proxy-only-token",
+      proxyUrl: `http://127.0.0.1:${proxyAddress.port}`,
+    });
+    await expect(connect.test()).rejects.toThrow("HTTP 503");
+    expect(directRequests).toBe(0);
+    await connect.setProxy(null);
+    expect(await connect.test()).toEqual({ vaultCount: 0 });
+    expect(directRequests).toBe(1);
+  } finally {
+    await connect.close();
+    proxy.closeAllConnections();
+    target.closeAllConnections();
+    await Promise.all([
+      new Promise<void>((resolve) => proxy.close(() => resolve())),
+      new Promise<void>((resolve) => target.close(() => resolve())),
+    ]);
+    await rm(directory, { recursive: true, force: true });
+  }
 });

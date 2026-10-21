@@ -1,6 +1,7 @@
 import {
   configureConnect,
   setConnectEnabled,
+  setConnectProxy,
   deleteConnect,
   testConnect,
   connectStatus,
@@ -72,6 +73,10 @@ export default function contribute(server: PluginServerContext) {
   server.handle(deleteConnect, async () => {
     await (await runtime).connect.remove();
     return { configured: false as const };
+  });
+  server.handle(setConnectProxy, async ({ proxyUrl }) => {
+    await (await runtime).connect.setProxy(proxyUrl);
+    return { proxyUrl };
   });
   server.handle(setConnectEnabled, async ({ enabled }) => {
     await (await runtime).connect.setEnabled(enabled);

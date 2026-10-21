@@ -5,7 +5,7 @@ See [OVERVIEW.md](OVERVIEW.md) for behavior, requirements, and security limits.
 Requires Paseo 0.11.2 or later, a macOS or Linux daemon, and npm on the daemon host. Enable trusted plugins in Paseo, then install the Git release:
 
 ```sh
-paseo plugin install https://github.com/yuruiz/paseo-secrets.git --ref v0.4.1
+paseo plugin install https://github.com/yuruiz/paseo-secrets.git --ref v0.4.2
 ```
 
 The private-input workflow exposes these MCP tools:
@@ -36,13 +36,17 @@ The plugin stores no private input or unreleased output in settings, drafts, tim
 
 Open **Settings → Plugins → Secrets → ⋯ → 1Password Connect** on the target host, enter the Connect server URL and access token, then select **Save and enable**. Configuration loads automatically after plugin reload or daemon restart. To replace it, enter the URL and a new token; the screen never retrieves the saved token.
 
+If the daemon reaches Connect through a proxy, set **Connect proxy URL**. Supported schemes are `http://`, `https://`, `socks5://` (daemon-side DNS) and `socks5h://` (proxy-side DNS); proxy authentication and URL paths are not supported. For a Tailscale userspace proxy listening on the daemon host at port 1055, use `socks5h://127.0.0.1:1055` or `http://127.0.0.1:1055`. **Save proxy** updates the proxy without re-entering the Connect token or changing agent access. Leave it blank to use a direct connection.
+
+The explicit proxy applies to connection tests, client vault/item browsing and all Connect MCP tools. It does not change the daemon's global proxy settings, use ambient proxy environment variables, or fall back to direct access if the proxy fails. HTTPS still validates certificates, and redirects remain rejected. Saving a proxy cancels outstanding Connect requests. Older saved configurations without a proxy field continue to connect directly. See [Tailscale userspace networking](https://tailscale.com/docs/concepts/userspace-networking) for the proxy setup.
+
 **Test saved connection** authenticates against the vault-list endpoint and reports only the vault count. It does not test write permissions, save draft changes, or enable disabled access. **Disable access** blocks the Connect MCP tools while retaining the credentials; **Enable access** resumes without re-entering them. **Delete saved configuration** removes the saved URL and token. Disabling, replacing or deleting configuration cancels outstanding Connect requests. It cannot undo a write already accepted by the Connect server.
 
 Use **Browse Connect items** on the same settings screen to select a vault and see its items. The list shows title, category, tags, update time and item ID; the selected vault ID is also available. Filter titles without case sensitivity, refresh either list, or show more than the first 50 matches. Empty vaults, no matches and request errors have distinct states. Browsing remains available while agent access is disabled and never enables it.
 
 Client browsing calls the saved Connect server from the daemon. It uses list endpoints only and strips fields outside the displayed metadata before returning results to the client. It does not fetch item details or secret field values. Metadata is held only while browsing and cleared when leaving, switching vaults, or applying configuration actions.
 
-The daemon stores URL, token and enabled state in `$PASEO_HOME/plugin-state/secrets-mcp/connect/configuration.json`. When `PASEO_HOME` is unset, it uses the daemon user’s `~/.paseo`, matching Paseo’s default. Explicit paths, including `~/…` and relative paths, use Paseo’s home resolution rules. The directory uses `0700` and the file uses `0600`. Saves use a private temporary file and atomic replacement; failed saves leave the active configuration unchanged. Corrupt or unreadable configuration disables Connect and appears as an error in Settings, where you can replace or delete it. This file is separate from ordinary plugin Settings, which authorized clients can read.
+The daemon stores URL, token, proxy URL and enabled state in `$PASEO_HOME/plugin-state/secrets-mcp/connect/configuration.json`. When `PASEO_HOME` is unset, it uses the daemon user’s `~/.paseo`, matching Paseo’s default. Explicit paths, including `~/…` and relative paths, use Paseo’s home resolution rules. The directory uses `0700` and the file uses `0600`. Saves use a private temporary file and atomic replacement; failed saves leave the active configuration unchanged. Corrupt or unreadable configuration disables Connect and appears as an error in Settings, where you can replace or delete it. This file is separate from ordinary plugin Settings, which authorized clients can read.
 
 The file is plaintext: the daemon user, same-user agents, administrators and backups can read it. It survives plugin removal because it lives outside the plugin source directory; use **Delete saved configuration** before uninstalling if you want it removed. A process crash during saving can leave a private temporary file in the same directory. Deleting a configuration does not revoke the token in 1Password or erase backups. Use the 1Password administration controls to revoke a token.
 
@@ -74,7 +78,7 @@ npm run format:check
 npm test
 ```
 
-The test file exercises the real local MCP server, disposable child processes, private image cleanup, output review, form/Skip behavior, and Connect HTTP requests against a local fixture. Connect persistence tests cover restart recovery, owner-only permissions, failed saves, damaged configuration, serialized writes, disable/enable, deletion and client metadata-only browsing. These tests do not access a live 1Password account. CI runs it on macOS and Linux with Node 22. The source was extracted from the Paseo monorepo after plugin lifecycle and browser flows were verified there; those host integration tests remain in Paseo.
+The test file exercises the real local MCP server, disposable child processes, private image cleanup, output review, form/Skip behavior, and Connect HTTP requests against a local fixture. Connect persistence tests cover restart recovery, owner-only permissions, failed saves, damaged configuration, serialized writes, disable/enable, deletion and client metadata-only browsing, HTTP/SOCKS proxy routing, proxy-side DNS, cancellation and TLS certificate rejection. These tests do not access a live 1Password account. CI runs it on macOS and Linux with Node 22. The source was extracted from the Paseo monorepo after plugin lifecycle and browser flows were verified there; those host integration tests remain in Paseo.
 
 To develop against this checkout:
 
