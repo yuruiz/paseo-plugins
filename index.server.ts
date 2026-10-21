@@ -1,3 +1,12 @@
+import {
+  configureConnect,
+  setConnectEnabled,
+  deleteConnect,
+  testConnect,
+  connectStatus,
+  listConnectVaults,
+  listConnectItems,
+} from "./shared/onepassword.js";
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -58,6 +67,26 @@ export default function contribute(server: PluginServerContext) {
   });
   // Startup failures surface through RPC; no unhandled rejection or credential-bearing logging.
   void runtime.catch(() => undefined);
+  server.handle(configureConnect, async (input) => {
+    await (await runtime).connect.configure(input);
+    return { configured: true as const };
+  });
+  server.handle(deleteConnect, async () => {
+    await (await runtime).connect.remove();
+    return { configured: false as const };
+  });
+  server.handle(setConnectEnabled, async ({ enabled }) => {
+    await (await runtime).connect.setEnabled(enabled);
+    return { enabled };
+  });
+  server.handle(testConnect, async () => (await runtime).connect.test());
+  server.handle(listConnectVaults, async () => ({
+    vaults: await (await runtime).connect.listVaults(),
+  }));
+  server.handle(listConnectItems, async (input) => ({
+    items: await (await runtime).connect.listItems(input),
+  }));
+  server.handle(connectStatus, async () => (await runtime).connect.status());
   server.handle(mcpConnection, async (_, { paseo }) => {
     api = paseo;
     return { url: (await runtime).url };

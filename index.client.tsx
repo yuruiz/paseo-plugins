@@ -1,3 +1,4 @@
+import { ConnectSettings } from "./client/connect.js";
 import type { PluginClientContext, PluginButtonRegistration } from "@getpaseo/plugin/client";
 import { z } from "zod";
 import { SecretsPopover, SecretsTimeline } from "./client/content.js";
@@ -5,6 +6,12 @@ import { RequestTimeline, OutputTimeline } from "./client/review.js";
 import { openSecrets, mcpConnection } from "./shared/contracts.js";
 
 export default function contribute(client: PluginClientContext) {
+  client.addSettingsScreen({
+    id: "onepassword",
+    title: "1Password Connect",
+    icon: "KeyRound",
+    Component: ConnectSettings,
+  });
   // Prime the subprocess-owned Paseo API for requests from existing MCP sessions.
   void client.rpc(mcpConnection, {}).catch(() => undefined);
   client.addTimelineRenderer({

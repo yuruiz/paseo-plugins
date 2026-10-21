@@ -7,6 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { SecretsBroker, SecretsError } from "./broker.js";
 
+import { OnePasswordConnect, registerConnectTools } from "./connect.js";
 import { SecretRequests } from "./requests.js";
 import {
   requestInputSchema,
@@ -52,11 +53,14 @@ export async function startRuntime({ stateDirectory, onRequest, onOutput }: Runt
   const imageDirectory = path.join(stateDirectory, "images");
   const broker = new SecretsBroker({ imageDirectory });
   const requests = new SecretRequests();
+  const connect = await OnePasswordConnect.open(path.join(stateDirectory, "connect"));
   const server = createServer((request, response) => {
-    void handleRequest({ request, response, broker, requests, onRequest, onOutput }).catch(() => {
-      if (!response.headersSent) response.writeHead(500);
-      response.end();
-    });
+    void handleRequest({ request, response, broker, requests, connect, onRequest, onOutput }).catch(
+      () => {
+        if (!response.headersSent) response.writeHead(500);
+        response.end();
+      },
+    );
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
@@ -75,6 +79,7 @@ export async function startRuntime({ stateDirectory, onRequest, onOutput }: Runt
   const url = `http://127.0.0.1:${address.port}/mcp`;
   async function close() {
     clearInterval(expiry);
+    await connect.close();
     requests.close();
     await broker.close();
     await new Promise<void>((resolve, reject) => {
@@ -98,7 +103,7 @@ export async function startRuntime({ stateDirectory, onRequest, onOutput }: Runt
     await close();
     throw error;
   }
-  return { broker, requests, url, close };
+  return { broker, requests, connect, url, close };
 }
 
 interface RequestContext {
@@ -106,6 +111,7 @@ interface RequestContext {
   response: ServerResponse;
   broker: SecretsBroker;
   requests: SecretRequests;
+  connect: OnePasswordConnect;
   onRequest?: RuntimeOptions["onRequest"];
   onOutput?: RuntimeOptions["onOutput"];
 }
@@ -115,6 +121,7 @@ async function handleRequest({
   response,
   broker,
   requests,
+  connect,
   onRequest,
   onOutput,
 }: RequestContext) {
@@ -148,7 +155,7 @@ async function handleRequest({
   const controller = new AbortController();
   const cancel = () => controller.abort();
   response.once("close", cancel);
-  const mcp = new McpServer({ name: "paseo-secrets", version: "0.3.0" });
+  const mcp = new McpServer({ name: "paseo-secrets", version: "0.4.0" });
   mcp.registerTool(
     "request_secrets",
     {
@@ -246,6 +253,7 @@ async function handleRequest({
       }
     },
   );
+  registerConnectTools(mcp, connect);
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,

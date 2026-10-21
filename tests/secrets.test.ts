@@ -153,6 +153,11 @@ test("MCP discovers the execution tool and returns only redacted output from the
       "request_secrets",
       "read_secret_output",
       "run_with_secrets",
+      "onepassword_list_vaults",
+      "onepassword_list_items",
+      "onepassword_get_item",
+      "onepassword_create_item",
+      "onepassword_replace_item",
     ]);
     const grant = grantFor(runtime.broker);
     const args = {
@@ -598,4 +603,432 @@ test("the form can finish an all-skipped request without creating any secret fie
   expect(result).toEqual({ secrets: [], images: [], skipped: ["TOKEN"] });
   expect(form.getState().status).toBe("saved");
   form.close();
+});
+
+test("Connect tools perform list, read, create and replace through HTTP and disconnect closes access", async () => {
+  const { createServer } = await import("node:http");
+  const received: { method: string; url: string; authorization: string; body: unknown }[] = [];
+  const fixture = createServer((request, response) => {
+    void (async () => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      const text = Buffer.concat(chunks).toString("utf8");
+      received.push({
+        method: request.method!,
+        url: request.url!,
+        authorization: request.headers.authorization!,
+        body: text ? JSON.parse(text) : null,
+      });
+      response.setHeader("Content-Type", "application/json");
+      if (request.url === "/v1/vaults/denied/items") {
+        response.writeHead(403).end(JSON.stringify({ message: "sensitive-upstream-error" }));
+      } else if (request.url === "/v1/vaults/redirect/items") {
+        response.writeHead(302, { Location: "/v1/vaults" }).end();
+      } else {
+        response.end(JSON.stringify({ id: "item", fields: [{ value: "fixture-value" }] }));
+      }
+    })().catch(() => response.destroy());
+  });
+  await new Promise<void>((resolve) => fixture.listen(0, "127.0.0.1", resolve));
+  const address = fixture.address();
+  if (!address || typeof address === "string") throw new Error("Missing fixture address");
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "secrets-connect-test-"));
+  const runtime = await startRuntime({ stateDirectory });
+  const client = new Client({ name: "connect-test", version: "1" });
+  try {
+    await client.connect(new StreamableHTTPClientTransport(new URL(runtime.url)));
+    expect(
+      (await client.callTool({ name: "onepassword_list_vaults", arguments: {} })).isError,
+    ).toBe(true);
+    expect(received).toEqual([]);
+    await runtime.connect.configure({
+      url: `http://127.0.0.1:${address.port}/`,
+      token: "fixture-token",
+    });
+    expect(runtime.connect.status()).toEqual({
+      configured: true,
+      enabled: true,
+      error: null,
+      url: `http://127.0.0.1:${address.port}/`,
+    });
+    await client.callTool({ name: "onepassword_list_vaults", arguments: {} });
+    await client.callTool({
+      name: "onepassword_list_items",
+      arguments: { vaultId: "vault", filter: 'title eq "Database"' },
+    });
+    const read = await client.callTool({
+      name: "onepassword_get_item",
+      arguments: { vaultId: "vault", itemId: "item" },
+    });
+    expect(read.content).toEqual([
+      { type: "text", text: JSON.stringify({ id: "item", fields: [{ value: "fixture-value" }] }) },
+    ]);
+    const item = {
+      title: "Test",
+      category: "LOGIN",
+      fields: [{ id: "password", value: "fixture-value" }],
+      vault: { id: "wrong-vault" },
+    };
+    const created = await client.callTool({
+      name: "onepassword_create_item",
+      arguments: { vaultId: "vault", item },
+    });
+    expect(created.isError).not.toBe(true);
+    const replaced = await client.callTool({
+      name: "onepassword_replace_item",
+      arguments: { vaultId: "vault", itemId: "item", item },
+    });
+    expect(replaced.isError).not.toBe(true);
+    expect(received).toEqual([
+      { method: "GET", url: "/v1/vaults", authorization: "Bearer fixture-token", body: null },
+      {
+        method: "GET",
+        url: "/v1/vaults/vault/items?filter=title%20eq%20%22Database%22",
+        authorization: "Bearer fixture-token",
+        body: null,
+      },
+      {
+        method: "GET",
+        url: "/v1/vaults/vault/items/item",
+        authorization: "Bearer fixture-token",
+        body: null,
+      },
+      {
+        method: "POST",
+        url: "/v1/vaults/vault/items",
+        authorization: "Bearer fixture-token",
+        body: { ...item, vault: { id: "vault" } },
+      },
+      {
+        method: "PUT",
+        url: "/v1/vaults/vault/items/item",
+        authorization: "Bearer fixture-token",
+        body: { ...item, id: "item", vault: { id: "vault" } },
+      },
+    ]);
+    const denied = await client.callTool({
+      name: "onepassword_list_items",
+      arguments: { vaultId: "denied" },
+    });
+    expect(denied.isError).toBe(true);
+    expect(JSON.stringify(denied)).toContain("HTTP 403");
+    expect(JSON.stringify(denied)).not.toContain("sensitive-upstream-error");
+    const redirected = await client.callTool({
+      name: "onepassword_list_items",
+      arguments: { vaultId: "redirect" },
+    });
+    expect(redirected.isError).toBe(true);
+    expect(received).toHaveLength(7);
+    const invalid = await client.callTool({
+      name: "onepassword_get_item",
+      arguments: { vaultId: "../vault", itemId: "item" },
+    });
+    expect(invalid.isError).toBe(true);
+    expect(received).toHaveLength(7);
+    await runtime.connect.remove();
+    expect(runtime.connect.status()).toEqual({
+      configured: false,
+      enabled: false,
+      url: null,
+      error: null,
+    });
+    expect(
+      (await client.callTool({ name: "onepassword_list_vaults", arguments: {} })).isError,
+    ).toBe(true);
+    expect(received).toHaveLength(7);
+    const disk = await readFile(path.join(stateDirectory, "endpoint.json"), "utf8");
+    expect(disk).not.toContain("fixture-token");
+  } finally {
+    await client.close();
+    await runtime.close();
+    await new Promise<void>((resolve) => fixture.close(() => resolve()));
+    await rm(stateDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Connect disconnect cancels an outstanding HTTP request and invalid configuration preserves the previous connection", async () => {
+  const { OnePasswordConnect } = await import("../server/connect.js");
+  const { createServer } = await import("node:http");
+  let reached: () => void = () => {};
+  const requested = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  const fixture = createServer(() => reached());
+  await new Promise<void>((resolve) => fixture.listen(0, "127.0.0.1", resolve));
+  const address = fixture.address();
+  if (!address || typeof address === "string") throw new Error("Missing fixture address");
+  const directory = await mkdtemp(path.join(tmpdir(), "connect-cancel-"));
+  const connect = await OnePasswordConnect.open(directory);
+  const url = `http://127.0.0.1:${address.port}`;
+  try {
+    await connect.configure({ url, token: "fixture-token" });
+    await expect(
+      connect.configure({ url: "https://user:password@example.com", token: "replacement-token" }),
+    ).rejects.toThrow("Invalid Connect URL or token.");
+    expect(connect.status()).toEqual({ configured: true, enabled: true, url, error: null });
+    const pending = connect.request("GET", "vaults", undefined, new AbortController().signal);
+    const rejected = expect(pending).rejects.toThrow("1Password Connect request failed");
+    await requested;
+    await connect.remove();
+    await rejected;
+    expect(connect.status()).toEqual({ configured: false, enabled: false, url: null, error: null });
+  } finally {
+    await connect.remove();
+    await connect.close();
+    await rm(directory, { recursive: true, force: true });
+    fixture.closeAllConnections();
+    await new Promise<void>((resolve) => fixture.close(() => resolve()));
+  }
+});
+
+test("Connect persists credentials privately across restart, disable/enable and deletion", async () => {
+  const { stat, chmod } = await import("node:fs/promises");
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "secrets-connect-persist-"));
+  let runtime = await startRuntime({ stateDirectory });
+  const url = "https://connect.example.com";
+  const directory = path.join(stateDirectory, "connect");
+  const file = path.join(directory, "configuration.json");
+  try {
+    await runtime.connect.configure({ url, token: "persisted-test-token" });
+    expect((await stat(directory)).mode & 0o777).toBe(0o700);
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
+      version: 1,
+      enabled: true,
+      url,
+      token: "persisted-test-token",
+    });
+    expect(runtime.connect.status()).toEqual({ configured: true, enabled: true, url, error: null });
+    await runtime.close();
+    await chmod(directory, 0o755);
+    await chmod(file, 0o644);
+    runtime = await startRuntime({ stateDirectory });
+    expect((await stat(directory)).mode & 0o777).toBe(0o700);
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    expect(runtime.connect.status()).toEqual({ configured: true, enabled: true, url, error: null });
+    await runtime.connect.setEnabled(false);
+    await runtime.close();
+    runtime = await startRuntime({ stateDirectory });
+    expect(runtime.connect.status()).toEqual({
+      configured: true,
+      enabled: false,
+      url,
+      error: null,
+    });
+    await expect(
+      runtime.connect.request("GET", "vaults", undefined, new AbortController().signal),
+    ).rejects.toThrow("disabled");
+    await runtime.connect.setEnabled(true);
+    expect(runtime.connect.status()).toEqual({ configured: true, enabled: true, url, error: null });
+    await runtime.connect.remove();
+    await expect(readFile(file)).rejects.toMatchObject({ code: "ENOENT" });
+    await runtime.close();
+    runtime = await startRuntime({ stateDirectory });
+    expect(runtime.connect.status()).toEqual({
+      configured: false,
+      enabled: false,
+      url: null,
+      error: null,
+    });
+    expect(await readdir(directory)).toEqual([]);
+  } finally {
+    await runtime.close();
+    await rm(stateDirectory, { recursive: true, force: true });
+  }
+});
+
+test("Connect preserves corrupt files for recovery and never exposes stored credentials in status", async () => {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const { OnePasswordConnect } = await import("../server/connect.js");
+  const directory = await mkdtemp(path.join(tmpdir(), "connect-recovery-"));
+  const file = path.join(directory, "configuration.json");
+  const damaged = '{"token":"private-corrupt-value",';
+  await writeFile(file, damaged);
+  const connect = await OnePasswordConnect.open(directory);
+  try {
+    expect(connect.status()).toEqual({
+      configured: false,
+      enabled: false,
+      url: null,
+      error: "Stored Connect configuration could not be read. Replace or delete it.",
+    });
+    expect(await readFile(file, "utf8")).toBe(damaged);
+    await connect.configure({
+      url: "https://connect.example.com",
+      token: "private-replacement-value",
+    });
+    expect(connect.status()).toEqual({
+      configured: true,
+      enabled: true,
+      url: "https://connect.example.com",
+      error: null,
+    });
+    const previous = await readFile(file, "utf8");
+    // Make the destination unusable to exercise a real rename failure, even when tests run as root.
+    await rm(file);
+    await mkdir(file);
+    await expect(
+      connect.configure({ url: "https://changed.example.com", token: "failed-replacement-value" }),
+    ).rejects.toThrow("Could not save Connect configuration");
+    expect(connect.status()).toEqual({
+      configured: true,
+      enabled: true,
+      url: "https://connect.example.com",
+      error: null,
+    });
+    expect(await readdir(directory)).toEqual(["configuration.json"]);
+    await rm(file, { recursive: true });
+    await writeFile(file, previous);
+    await connect.setEnabled(false);
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
+      version: 1,
+      enabled: false,
+      url: "https://connect.example.com",
+      token: "private-replacement-value",
+    });
+  } finally {
+    await connect.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Connect serializes saves and waits for the last accepted write during shutdown", async () => {
+  const { OnePasswordConnect } = await import("../server/connect.js");
+  const directory = await mkdtemp(path.join(tmpdir(), "connect-writes-"));
+  const connect = await OnePasswordConnect.open(directory);
+  try {
+    const first = connect.configure({ url: "https://first.example.com", token: "first-token" });
+    const second = connect.configure({ url: "https://second.example.com", token: "second-token" });
+    const disable = connect.setEnabled(false);
+    const closing = connect.close();
+    await Promise.all([first, second, disable, closing]);
+    await expect(
+      connect.configure({ url: "https://late.example.com", token: "late-token" }),
+    ).rejects.toThrow("stopped");
+    const restored = await OnePasswordConnect.open(directory);
+    expect(restored.status()).toEqual({
+      configured: true,
+      enabled: false,
+      url: "https://second.example.com",
+      error: null,
+    });
+    await restored.remove();
+    await restored.close();
+  } finally {
+    await connect.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Connect connection tests use saved credentials without enabling access or returning vault metadata", async () => {
+  const { createServer } = await import("node:http");
+  const { OnePasswordConnect } = await import("../server/connect.js");
+  const requests: { method: string; url: string; authorization: string }[] = [];
+  const fixture = createServer((request, response) => {
+    requests.push({
+      method: request.method!,
+      url: request.url!,
+      authorization: request.headers.authorization!,
+    });
+    response.setHeader("Content-Type", "application/json");
+    if (request.headers.authorization === "Bearer rejected-token") {
+      response.writeHead(401).end(JSON.stringify({ message: "rejected-token" }));
+    } else {
+      response.end(JSON.stringify([{ id: "vault-id", name: "Private vault name" }]));
+    }
+  });
+  await new Promise<void>((resolve) => fixture.listen(0, "127.0.0.1", resolve));
+  const address = fixture.address();
+  if (!address || typeof address === "string") throw new Error("Missing fixture address");
+  const directory = await mkdtemp(path.join(tmpdir(), "connect-test-action-"));
+  let connect = await OnePasswordConnect.open(directory);
+  const url = `http://127.0.0.1:${address.port}`;
+  try {
+    await connect.configure({ url, token: "accepted-token" });
+    await connect.setEnabled(false);
+    await connect.close();
+    connect = await OnePasswordConnect.open(directory);
+    expect(await connect.test()).toEqual({ vaultCount: 1 });
+    expect(connect.status()).toEqual({ configured: true, enabled: false, url, error: null });
+    expect(requests).toEqual([
+      { method: "GET", url: "/v1/vaults", authorization: "Bearer accepted-token" },
+    ]);
+    await connect.configure({ url, token: "rejected-token" });
+    await expect(connect.test()).rejects.toThrow("HTTP 401");
+  } finally {
+    await connect.close();
+    await rm(directory, { recursive: true, force: true });
+    fixture.closeAllConnections();
+    await new Promise<void>((resolve) => fixture.close(() => resolve()));
+  }
+});
+
+test("client Connect browsing returns only list metadata, including while agent access is disabled", async () => {
+  const { createServer } = await import("node:http");
+  const { OnePasswordConnect } = await import("../server/connect.js");
+  const paths: string[] = [];
+  const fixture = createServer((request, response) => {
+    paths.push(request.url!);
+    response.setHeader("Content-Type", "application/json");
+    if (request.url === "/v1/vaults") {
+      response.end(
+        JSON.stringify([{ id: "vault", name: "Engineering", description: "private-description" }]),
+      );
+    } else if (request.url === "/v1/vaults/vault/items") {
+      response.end(
+        JSON.stringify([
+          {
+            id: "item",
+            title: "Database",
+            category: "DATABASE",
+            tags: ["production"],
+            updatedAt: "2026-10-21T00:00:00Z",
+            fields: [{ value: "never-return-this-value" }],
+            notesPlain: "private-note",
+          },
+        ]),
+      );
+    } else if (request.url === "/v1/vaults/empty/items") {
+      response.end("[]");
+    } else {
+      response.writeHead(403).end('{"message":"private-error"}');
+    }
+  });
+  await new Promise<void>((resolve) => fixture.listen(0, "127.0.0.1", resolve));
+  const address = fixture.address();
+  if (!address || typeof address === "string") throw new Error("Missing fixture address");
+  const directory = await mkdtemp(path.join(tmpdir(), "connect-browser-"));
+  const connect = await OnePasswordConnect.open(directory);
+  try {
+    await expect(connect.listVaults()).rejects.toThrow("Configure");
+    await connect.configure({ url: `http://127.0.0.1:${address.port}`, token: "test-token" });
+    await connect.setEnabled(false);
+    expect(await connect.listVaults()).toEqual([{ id: "vault", name: "Engineering" }]);
+    expect(await connect.listItems({ vaultId: "vault" })).toEqual([
+      {
+        id: "item",
+        title: "Database",
+        category: "DATABASE",
+        tags: ["production"],
+        updatedAt: "2026-10-21T00:00:00Z",
+      },
+    ]);
+    expect(await connect.listItems({ vaultId: "empty" })).toEqual([]);
+    await expect(connect.listItems({ vaultId: "denied" })).rejects.toThrow("HTTP 403");
+    await expect(connect.listItems({ vaultId: "../other" })).rejects.toThrow("Invalid vault ID");
+    expect(paths).toEqual([
+      "/v1/vaults",
+      "/v1/vaults/vault/items",
+      "/v1/vaults/empty/items",
+      "/v1/vaults/denied/items",
+    ]);
+    expect(connect.status().enabled).toBe(false);
+    await connect.remove();
+    await expect(connect.listVaults()).rejects.toThrow("Configure");
+  } finally {
+    await connect.close();
+    await rm(directory, { recursive: true, force: true });
+    fixture.closeAllConnections();
+    await new Promise<void>((resolve) => fixture.close(() => resolve()));
+  }
 });
