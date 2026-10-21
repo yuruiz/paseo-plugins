@@ -9,7 +9,6 @@ import {
 } from "./shared/onepassword.js";
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
 import { randomUUID } from "node:crypto";
-import path from "node:path";
 import {
   getSecretRequest,
   declineSecretRequest,
@@ -24,13 +23,12 @@ import {
   submitSecretRequest,
 } from "./shared/contracts.js";
 import { startRuntime } from "./server/runtime.js";
+import { resolveStateDirectory } from "./server/state-directory.js";
 
 export default function contribute(server: PluginServerContext) {
-  const home = process.env.PASEO_HOME;
-  if (!home) throw new Error("PASEO_HOME is required to locate the Secrets MCP endpoint.");
   let api: PluginHandlerContext["paseo"] | undefined;
   const runtime = startRuntime({
-    stateDirectory: path.join(home, "plugin-state", "secrets-mcp"),
+    stateDirectory: resolveStateDirectory(),
     async onRequest(input, requests) {
       if (!api) throw new Error("Paseo session unavailable");
       const agent = api.agents.ref(input.agentId);

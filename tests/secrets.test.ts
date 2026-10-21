@@ -1032,3 +1032,23 @@ test("client Connect browsing returns only list metadata, including while agent 
     await new Promise<void>((resolve) => fixture.close(() => resolve()));
   }
 });
+
+test("Secrets state directory follows Paseo's default and custom home rules without requiring PASEO_HOME", async () => {
+  const { homedir } = await import("node:os");
+  const { resolveStateDirectory } = await import("../server/state-directory.js");
+  expect(resolveStateDirectory({})).toBe(
+    path.join(homedir(), ".paseo", "plugin-state", "secrets-mcp"),
+  );
+  expect(resolveStateDirectory({ PASEO_HOME: "/custom/daemon" })).toBe(
+    path.join("/custom/daemon", "plugin-state", "secrets-mcp"),
+  );
+  expect(resolveStateDirectory({ PASEO_HOME: "~/custom-daemon" })).toBe(
+    path.join(homedir(), "custom-daemon", "plugin-state", "secrets-mcp"),
+  );
+  expect(resolveStateDirectory({ PASEO_HOME: "~" })).toBe(
+    path.join(homedir(), "plugin-state", "secrets-mcp"),
+  );
+  expect(resolveStateDirectory({ PASEO_HOME: ".dev/paseo-home" })).toBe(
+    path.resolve(".dev/paseo-home", "plugin-state", "secrets-mcp"),
+  );
+});

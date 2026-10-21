@@ -5,7 +5,7 @@ See [OVERVIEW.md](OVERVIEW.md) for behavior, requirements, and security limits.
 Requires Paseo 0.11.2 or later, a macOS or Linux daemon, and npm on the daemon host. Enable trusted plugins in Paseo, then install the Git release:
 
 ```sh
-paseo plugin install https://github.com/yuruiz/paseo-secrets.git --ref v0.4.0
+paseo plugin install https://github.com/yuruiz/paseo-secrets.git --ref v0.4.1
 ```
 
 The private-input workflow exposes these MCP tools:
@@ -42,7 +42,7 @@ Use **Browse Connect items** on the same settings screen to select a vault and s
 
 Client browsing calls the saved Connect server from the daemon. It uses list endpoints only and strips fields outside the displayed metadata before returning results to the client. It does not fetch item details or secret field values. Metadata is held only while browsing and cleared when leaving, switching vaults, or applying configuration actions.
 
-The daemon stores URL, token and enabled state in `$PASEO_HOME/plugin-state/secrets-mcp/connect/configuration.json`. The directory uses `0700` and the file uses `0600`. Saves use a private temporary file and atomic replacement; failed saves leave the active configuration unchanged. Corrupt or unreadable configuration disables Connect and appears as an error in Settings, where you can replace or delete it. This file is separate from ordinary plugin Settings, which authorized clients can read.
+The daemon stores URL, token and enabled state in `$PASEO_HOME/plugin-state/secrets-mcp/connect/configuration.json`. When `PASEO_HOME` is unset, it uses the daemon user’s `~/.paseo`, matching Paseo’s default. Explicit paths, including `~/…` and relative paths, use Paseo’s home resolution rules. The directory uses `0700` and the file uses `0600`. Saves use a private temporary file and atomic replacement; failed saves leave the active configuration unchanged. Corrupt or unreadable configuration disables Connect and appears as an error in Settings, where you can replace or delete it. This file is separate from ordinary plugin Settings, which authorized clients can read.
 
 The file is plaintext: the daemon user, same-user agents, administrators and backups can read it. It survives plugin removal because it lives outside the plugin source directory; use **Delete saved configuration** before uninstalling if you want it removed. A process crash during saving can leave a private temporary file in the same directory. Deleting a configuration does not revoke the token in 1Password or erase backups. Use the 1Password administration controls to revoke a token.
 
