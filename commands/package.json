@@ -29,7 +29,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run server/commands.test.ts --bail=1",
+    "test": "vitest run --bail=1",
     "lint": "oxlint",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",

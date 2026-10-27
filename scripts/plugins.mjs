@@ -46,7 +46,7 @@ for (const plugin of selected) {
   } else if (operation === "check") {
     for (const script of ["typecheck", "lint", "format:check"]) run(plugin, ["run", script]);
   } else if (operation === "test") {
-    run(plugin, ["run", "test", "--", ...testFiles, "--bail=1"]);
+    run(plugin, ["run", "test", "--", ...testFiles]);
   } else {
     run(plugin, ["run", operation]);
   }

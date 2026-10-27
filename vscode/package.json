@@ -32,7 +32,7 @@
     "lint": "oxlint",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
-    "test": "vitest run",
+    "test": "vitest run --bail=1",
     "start": "node scripts/start.mjs"
   },
   "devDependencies": {
