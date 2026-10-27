@@ -1,0 +1,15 @@
+{
+  "id": "commands",
+  "name": "Commands",
+  "description": "Browse project, global and session commands, preview Markdown and run them in the current agent.",
+  "requirements": {
+    "paseo": ">=0.13.0"
+  },
+  "build": [["npm", "ci", "--omit=dev", "--ignore-scripts"]],
+  "translations": {
+    "zh-CN": {
+      "name": "Commands",
+      "description": "在 Paseo 当前会话的浮层中浏览、预览和触发项目、全局及会话命令。"
+    }
+  }
+}
