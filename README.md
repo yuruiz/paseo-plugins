@@ -11,6 +11,8 @@ Plugins for [Paseo](https://paseo.sh). Each plugin lives in its own top-level di
 | [VS Code](vscode/)      | Open a configured remote VS Code editor inside a workspace tab.                                   | `vscode-diff`     |
 | [Shell Yeah](shell-yeah/) | Run shell commands from chat without injecting agent system prompts. | `shell-yeah` |
 
+| [Skills](skills/) | Search, preview and invoke skills backed by a SKILL.md file. | `skills` |
+
 ## Install
 
 Enable plugins on the intended Paseo host, then install the folders you need:
@@ -22,6 +24,7 @@ paseo plugin add git:yuruiz/paseo-plugins:scheduler
 paseo plugin add git:yuruiz/paseo-plugins:github-pr
 paseo plugin add git:yuruiz/paseo-plugins:vscode
 paseo plugin add git:yuruiz/paseo-plugins:shell-yeah
+paseo plugin add git:yuruiz/paseo-plugins:skills
 ```
 
 Each plugin's README describes its host version, setup, data access and platform requirements. Plugins are trusted, unsandboxed code. Existing registry installations keep their previously approved source until the registry approves a migration; the commands above install directly from this repository.

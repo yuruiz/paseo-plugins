@@ -1,0 +1,118 @@
+# Fork changes
+
+## 0.4.1
+
+- Import upstream 0.4.0 into this repository, retaining its MIT license.
+- List and count only filesystem skills; remove session-command discovery and UI.
+- Reject blank skill names/descriptions and clarify unsupported-provider state.
+- Integrate repository checks and match Paseo 0.13.0 SDK/UI imports.
+
+# Changelog
+
+Notable changes to `skills`. The other plugins in this repository version separately.
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the version numbers
+follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Every version is published to npm
+as `@gpambrozio/paseo-skills` and tagged here, so a version is something to install and a line to
+read before you move.
+
+## [0.4.0] — 2026-10-01
+
+### Added
+
+- **Hermes agents get their skill files scanned off disk.** A Hermes agent's Skills tab and pill
+  popover now list every skill in `~/.hermes/skills` (or `$HERMES_HOME/skills`) with its origin,
+  its path, and its full text — the same treatment Claude and Codex already had — instead of only
+  the session commands Hermes reports over ACP. Hermes keeps skills in category folders as well
+  as flat ones (`productivity/docx` alongside a linked `paseo`), so the scan reads both levels,
+  skipping the directories Hermes itself excludes — at both levels, so an excluded name posing
+  as a flat skill never lists and never shadows a live one. The skills were always usable by the
+  agent; this only makes them visible in the panel.
+
+## [0.3.0] — 2026-09-26
+
+### Changed
+
+- **The Skills pill opens a popover above the composer instead of a new tab.** It lists the same
+  skills the Skills tab does, with the same search. Pick one to see a short summary of it, type any
+  arguments and press **Invoke** — it is sent exactly as it is from the tab, and the popover closes
+  so you can watch the agent start. **← All skills** goes back to the list, and **Open tab** at the
+  top right opens the full Skills tab as the pill used to, where the whole skill is shown. The pill
+  still shows how many skills there are.
+
+## [0.2.1] — 2026-09-23
+
+### Fixed
+
+- **The Skills pill reaches agents created after the plugin loaded.** Paseo 0.9 changed
+  `agents.subscribe()` to a local listener that no longer asks the daemon for agent data, so the
+  pill only covered agents that existed at load; a new session had none until the plugin was
+  reloaded. On 0.9 clients the pill now opens its own agent observation
+  (`agents.list({ subscribe: {} })`) and follows its snapshots and updates; an 0.8 client keeps the
+  previous listen-and-seed behaviour, because sending `subscribe` from there would replace the
+  app's own agent subscription.
+
+## [0.2.0] — 2026-09-22
+
+### Added
+
+- **A one-line description of the plugin**, shown next to it in Paseo's plugins list, so it is
+  clear what it does without opening it.
+
+### Changed
+
+- **Paseo 0.9 or newer is now required.** On 0.8 this version will not load. Staying on 0.8 means
+  staying on the previous release, which keeps working.
+
+## [0.1.3] — 2026-09-19
+
+### Fixed
+
+- **Loads on Paseo 0.8 again.** 0.8 rejects any manifest key it does not recognise, and the
+  previous release added one, so the plugin refused to load there at all. On 0.9 and newer nothing
+  was wrong and nothing changes now.
+
+## [0.1.2] — 2026-09-19
+
+### Added
+
+- **Installs from npm.** On Paseo 0.9 and newer,
+  `paseo plugin install npm:@gpambrozio/paseo-skills` fetches the plugin from the npm
+  registry — no clone, no repository path to remember. Installing from this repository keeps
+  working, and nothing about what the plugin does has changed.
+
+## [0.1.1] — 2026-09-16
+
+### Fixed
+
+- **The Skills pill is back above the composer.** It vanished on Paseo 0.8.0, which changed the way
+  a plugin adds one. Nothing else about it has changed: it still counts what the panel will list,
+  and pressing it still opens that agent's skills. ⌘K and **Skills** worked throughout, if you need
+  the panel before you update.
+
+## [0.1.0] — 2026-09-08
+
+The first numbered release. The plugin itself is older than this entry — it simply had no version
+until now, so everything it does is listed here rather than split across releases it never had. See
+the git history for how each part arrived.
+
+### Added
+
+- **A Skills pill above an agent's composer**, badged with how many skills that agent can use. Press
+  it for the full list. ⌘K and **Skills** reaches the same panel, with a workspace tab holding an
+  agent in focus.
+- **Every skill the agent can actually use, grouped by where it comes from** — the project, the
+  repository, your personal folder, your machine, or a plugin — so two skills with the same name are
+  told apart by origin rather than guessed at. A search box filters by name and description.
+- **What a skill actually says.** Opening one shows its description, the file it lives in, and its
+  full instructions as written. **Copy path** takes the location, for when you want to edit it.
+- **Invoke, with optional arguments.** Runs the skill on the agent you opened the panel from, and
+  takes you to that agent so you can watch it work. A double press cannot send it twice.
+- **Skills the agent can use but you cannot run yourself** are listed with a note saying so, instead
+  of a button that would not have worked.
+- **Works with every provider.** Claude and Codex additionally have their skill files read from
+  disk, which is what gives a skill its origin, its location, and its full text; every other
+  provider lists what its running session reports — a name, a description, and an argument hint.
+- **Requires Paseo 0.8.0 or newer**, on the computer running the daemon _and_ on whatever you view
+  the panel in. On anything older the plugin reports itself as incompatible rather than half
+  working.

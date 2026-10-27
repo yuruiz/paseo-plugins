@@ -1,0 +1,96 @@
+# AGENTS.md
+
+A Paseo plugin that lists the agent skills available to an agent session, shows where each one
+comes from, renders its `SKILL.md`, and invokes it.
+
+The repo root `CONTRIBUTING.md` covers what every plugin here shares: the per-folder npm layout, the
+typecheck/test/reload loop, the client/server bundle split, and the constraints nothing catches at
+compile time. This file covers only what is specific to `skills`.
+
+Discovery is filesystem-only in this fork. Only readable `SKILL.md` files with nonblank name
+and description enter the menu or badge. Never add `agent.commands()` as a fallback: provider
+classification mislabels session controls as skills. See `docs/design.md` for this fork's scope.
+Do not edit the Paseo host from this plugin.
+
+## Orientation
+
+| Doc                        | What's in it                                                               |
+| -------------------------- | -------------------------------------------------------------------------- |
+| `README.md`                | Install, the dev loop, and what each file owns.                            |
+| `docs/design.md`           | Why it is shaped this way, and what it deliberately does not do.           |
+| `docs/execution-ledger.md` | Every decision taken while building it, and what each costs if it's wrong. |
+
+Read `docs/design.md` before changing discovery. Its Limitations section is load-bearing — three
+entries there exist because a reviewer proved the code was wrong about the real world.
+
+## Gotchas
+
+- **The plugin id is `skills`, not `paseo-skills`.** `paseo plugin init` took it from the directory
+  basename, and the folder was renamed when this moved into `paseo-plugins`. Every CLI command uses
+  `skills`.
+- **Codex scans `.agents/skills`, not `.codex/skills`.** Its documented search path is
+  `<dir>/.agents/skills` for every dir from cwd to the repo root, then `~/.agents/skills`, then
+  `/etc/codex/skills`. `.codex/skills` is read one rank lower only because older Codex builds read
+  it, Paseo before 0.11.0-beta.2 synced its orchestration skills there, and Paseo since leaves a
+  copy there in place when the user edited it — it now writes only `~/.agents` and `~/.claude`.
+  Paseo's own `listCodexSkills` is stale on this; do not "fix" the resolver back to matching it.
+- **A source kind lives in three files.** `SkillSourceKind` (`server/resolve/skill-entry.ts`), the
+  zod enum (`shared/skills.ts`), and `SOURCE_ORDER` (`client/browser.tsx`). The first two disagreeing
+  fails validation at runtime; a kind missing from the third sorts to the top of the panel, since
+  `indexOf` returns `-1`.
+- **Claude plugin scoping keys on `projectPath`, not on `scope`.** Real manifests carry
+  `scope: "local"` entries that are per-project. An entry with a `projectPath` applies only inside
+  it; one without applies everywhere.
+- **Do not apply `unquote()` to block-scalar continuation lines** in `server/resolve/frontmatter.ts`.
+  Block scalar content is literal YAML, quotes included; stripping them corrupts real skills.
+- **Nothing in Paseo enumerates registered panels.** `addWorkspacePanel` registers the tab type
+  only; the panel is reachable because the Command Center item and the pill's popover (its **Open
+  tab** button) both call `openPanel`. Remove both and the panel exists but cannot be opened.
+- **The panel and the pill's popover are one browser.** `client/browser.tsx` owns the list, the
+  search, the detail screen and the invoke; `SkillsPanel` and the popover only frame it and say
+  what happens after a send — the panel moves to the agent's tab, the popover calls `close()`. The
+  popover is a host surface that already scrolls and pads, so `frame="popover"` draws a plain
+  `View`; a `ScrollView` inside it would fight the host's for the gesture. Its size is the host's:
+  280–420 wide and at most 440 tall, hardcoded in the app, with no size field in the button
+  descriptor to raise it. The popover's skill detail also leaves out the path and **Copy path**,
+  which only the tab shows.
+- **The popover's pages share the host's one scroll offset**, and no plugin API moves it. A detail
+  opened from far down the list would keep the list's offset and open with its back link and
+  Invoke out of view, so `detailLines` caps the popover's detail (description and `SKILL.md`
+  excerpt) to fit inside the 440-point surface: with nothing left to scroll, the offset falls back
+  to the top. Anything added to that detail has to keep it under that height.
+- **A send outlives the screen that started it.** The user can go back, pick another skill, or
+  close and reopen the popover before `send` answers, and the popover's `close()` is not scoped to
+  one opening. `sendInvocation` (`client/invoke.ts`) reports success only while the detail that
+  sent it is still mounted, and a failure nobody can see any more goes to a toast. Content props carry `close()` but no `openPanel`, so `contributePills` hands the popover
+  the call its **Open tab** button makes. Updating the pill's `label` leaves an open popover open;
+  changing `behavior`, hiding or disabling it closes it.
+- **The pill's registration loop _is_ the client entry.** Before 0.8 it was a callback handed to
+  `addClientSide`; now `index.client.tsx` runs in the app directly and calls `contributePills`,
+  returning its cleanup as the entry's. The `paseo-plugin.d.ts` shim that used to type all of this
+  by hand is gone — `@getpaseo/plugin` is a real dependency, so a new host API needs no declaration
+  written first.
+- **A composer pill is a description, not a component.** `addComposerPill` takes
+  `{ id, workspaceId, agentId, button }`, where `button` is a `title`, an `icon`, an optional
+  `label` and a `behavior` — and it returns `{ update, remove }`, not a cleanup function. The
+  0.8.0-beta.1 SDK typed the older `{ title, Component, onPress }` shape instead, which the released
+  0.8.0 app rejects, so the pill silently never registered. **Track the daemon's exact version**;
+  a beta of the SDK is not the release.
+- **The count reaches the label through the icon.** A declarative button has no render to hang a
+  query on, so `client/pill.tsx` makes `button.icon` a component, runs `useSkillsQuery` there, and
+  calls `update({ label })` from an effect. That is what keeps the badge's `skills.list` call
+  bounded to visible agents: `contributePills` registers a pill for every agent on the host, but
+  the host mounts one only when that agent's composer is on screen. Fetching the count at
+  registration instead would scan for every agent that exists.
+- **`button.id` must match `/^[a-z][a-z0-9-]*$/`**, which is stricter than the RPC name pattern —
+  no dots. Registering the same id twice for one agent throws `Duplicate plugin button`, which is
+  the other reason `addPill` returns early rather than re-registering.
+- **On Paseo 0.9, `agents.subscribe()` requests nothing.** It only adds a local listener to
+  observations this API instance opened with `agents.list({ subscribe: {} })`; a bare
+  `subscribe()` plus a one-shot `list()` seed misses every agent created afterwards. The pill
+  therefore opens its own observation through `client/agents.ts` and rebuilds from its snapshots,
+  which arrive on first connect and after every reconnect. A 0.8 client must not send `subscribe`
+  at all — the daemon keeps one agents subscription slot per legacy connection, last query wins,
+  so the plugin would evict the app's own subscription. `canObserveAgents()` picks the path before
+  any request by feature-detecting `observeEvents`, which shipped with observations in
+  `0.9.0-beta.1`.
