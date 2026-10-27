@@ -7,7 +7,7 @@ Browse commands for the current agent, inspect their Markdown and send them with
 Install from the public source repository:
 
 ```sh
-paseo plugin add git:yuruiz/paseo-commands
+paseo plugin add git:yuruiz/paseo-plugins:commands
 ```
 
 The runtime plugin ID is `commands`. Enable plugins on the host before using it. Installing from Git runs `npm ci --omit=dev --ignore-scripts` to install the locked YAML parser dependency. Node.js 22 or newer and npm must be available on the daemon host.
@@ -17,8 +17,8 @@ The composer button belongs to an existing agent. A new empty draft has no agent
 ## Development
 
 ```sh
-git clone https://github.com/yuruiz/paseo-commands.git
-cd paseo-commands
+git clone https://github.com/yuruiz/paseo-plugins.git
+cd paseo-plugins/commands
 npm ci --ignore-scripts
 npm run typecheck
 paseo plugin install "$PWD"

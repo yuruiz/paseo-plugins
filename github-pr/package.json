@@ -3,9 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "description": "GitHub pull request monitoring, workspace automation, and review workflows for Paseo",
+  "homepage": "https://github.com/yuruiz/paseo-plugins/tree/main/github-pr#readme",
+  "bugs": {
+    "url": "https://github.com/yuruiz/paseo-plugins/issues"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yuruiz/paseo-github-pr.git"
+    "url": "git+https://github.com/yuruiz/paseo-plugins.git",
+    "directory": "github-pr"
   },
   "type": "module",
   "scripts": {

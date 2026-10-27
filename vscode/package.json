@@ -3,7 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "description": "Open a remote VS Code editor in a Paseo workspace tab.",
+  "homepage": "https://github.com/yuruiz/paseo-plugins/tree/main/vscode#readme",
+  "bugs": {
+    "url": "https://github.com/yuruiz/paseo-plugins/issues"
+  },
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yuruiz/paseo-plugins.git",
+    "directory": "vscode"
+  },
   "files": [
     "paseo-plugin.json",
     "index.client.tsx",

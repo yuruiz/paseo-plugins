@@ -80,7 +80,7 @@ curl -fL "https://github.com/gitpod-io/openvscode-server/releases/download/openv
   -o "$EDITOR_ROOT/openvscode-server.tar.gz"
 tar -xzf "$EDITOR_ROOT/openvscode-server.tar.gz" \
   -C "$EDITOR_ROOT/runtime" --strip-components=1
-git clone https://github.com/yuruiz/paseo-vscode.git "$EDITOR_ROOT/plugin"
+git clone https://github.com/yuruiz/paseo-plugins.git "$EDITOR_ROOT/plugins"
 ```
 
 No `npm ci`, build, or typecheck is required to use the plugin or launcher. Those commands are
@@ -93,7 +93,7 @@ Replace the example hostname with the workspace host's Tailscale DNS name, or yo
 proxy's hostname. Keep the hostname if your client uses domain-based proxy routing.
 
 ```sh
-node "$EDITOR_ROOT/plugin/scripts/start.mjs" \
+node "$EDITOR_ROOT/plugins/vscode/scripts/start.mjs" \
   --binary "$EDITOR_ROOT/runtime/bin/openvscode-server" \
   --data "$EDITOR_ROOT/data" \
   --public-url https://YOUR-HOST.YOUR-TAILNET.ts.net:8443
@@ -134,13 +134,13 @@ required in that case. Do not use the host's loopback address as the remote clie
 Target the Paseo daemon that owns your workspaces:
 
 ```sh
-paseo plugin install yuruiz/paseo-vscode
+paseo plugin install git:yuruiz/paseo-plugins:vscode
 ```
 
 If your CLI does not support Git sources, install the helper checkout as a directory source:
 
 ```sh
-paseo plugin install "$EDITOR_ROOT/plugin"
+paseo plugin install "$EDITOR_ROOT/plugins/vscode"
 ```
 
 These are alternative installation methods; use one. Directory installation still requires a

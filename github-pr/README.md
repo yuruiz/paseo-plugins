@@ -14,8 +14,9 @@ A Paseo plugin for monitoring GitHub pull requests, binding them to workspaces, 
 Clone and install from the daemon machine:
 
 ```sh
-git clone https://github.com/yuruiz/paseo-github-pr.git
-cd paseo-github-pr
+git clone https://github.com/yuruiz/paseo-plugins.git
+cd paseo-plugins/github-pr
+npm ci --ignore-scripts
 paseo plugin install "$PWD"
 ```
 

@@ -5,7 +5,7 @@ See [OVERVIEW.md](OVERVIEW.md) for behavior, requirements, and security limits.
 Requires Paseo 0.11.2 or later, a macOS or Linux daemon, and npm on the daemon host. Enable trusted plugins in Paseo, then install the Git release:
 
 ```sh
-paseo plugin install https://github.com/yuruiz/paseo-secrets.git --ref v0.4.3
+paseo plugin install git:yuruiz/paseo-plugins:secrets
 ```
 
 The private-input workflow exposes these MCP tools:
@@ -85,7 +85,7 @@ The test file exercises the real local MCP server, disposable child processes, p
 To develop against this checkout:
 
 ```sh
-paseo plugin install /absolute/path/to/paseo-secrets
+paseo plugin install /absolute/path/to/paseo-plugins/secrets
 ```
 
 Reload installed source changes with `paseo plugin reload secrets`. Reloading drops pending requests, grants and held output. Reload existing agent sessions afterward to refresh their tool inventory.

@@ -1,0 +1,15 @@
+{
+  "id": "company-demo",
+  "name": "Company business calendar (example)",
+  "version": "2026.1",
+  "timezone": "Asia/Shanghai",
+  "validFrom": "2026-01-01",
+  "validThrough": "2026-12-31",
+  "sources": ["https://example.com/company-calendar-policy"],
+  "weekdays": [1, 2, 3, 4, 5],
+  "session": null,
+  "overrides": {
+    "2026-09-30": { "open": false, "reason": "Company day off (example)", "session": null },
+    "2026-10-10": { "open": true, "reason": "Extra business day (example)", "session": null }
+  }
+}

@@ -3,14 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "description": "Browse and run project, global and session commands from a popover in Paseo.",
-  "homepage": "https://github.com/yuruiz/paseo-commands#readme",
+  "homepage": "https://github.com/yuruiz/paseo-plugins/tree/main/commands#readme",
   "bugs": {
-    "url": "https://github.com/yuruiz/paseo-commands/issues"
+    "url": "https://github.com/yuruiz/paseo-plugins/issues"
   },
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yuruiz/paseo-commands.git"
+    "url": "git+https://github.com/yuruiz/paseo-plugins.git",
+    "directory": "commands"
   },
   "files": [
     "paseo-plugin.json",

@@ -1,0 +1,33 @@
+name: Plugins
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    name: ${{ matrix.plugin }} (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: [commands, secrets, scheduler, github-pr, vscode]
+        os: [ubuntu-latest]
+        include:
+          - plugin: secrets
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: ${{ matrix.plugin }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.plugin }}/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test -- --bail=1

@@ -1,0 +1,58 @@
+{
+  "name": "paseo-scheduler",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Business-calendar schedules for Paseo agents, with previews and run history.",
+  "homepage": "https://github.com/yuruiz/paseo-plugins/tree/main/scheduler#readme",
+  "bugs": {
+    "url": "https://github.com/yuruiz/paseo-plugins/issues"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yuruiz/paseo-plugins.git",
+    "directory": "scheduler"
+  },
+  "files": [
+    "VALIDATION.md",
+    "paseo-plugin.json",
+    "index.client.ts",
+    "index.client.tsx",
+    "index.server.ts",
+    "index.server.tsx",
+    "client/",
+    "server/",
+    "shared/",
+    "examples/",
+    "!server/**/*.test.ts",
+    "!client/**/*.test.ts",
+    "OVERVIEW.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "oxlint",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check ."
+  },
+  "dependencies": {
+    "@js-temporal/polyfill": "0.5.1",
+    "proper-lockfile": "4.1.2"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.9.2",
+    "@tanstack/react-query": "^5.90.11",
+    "@types/node": "^22.0.0",
+    "@types/proper-lockfile": "^4.1.4",
+    "@types/react": "~19.2.0",
+    "oxfmt": "0.46.0",
+    "oxlint": "1.61.0",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.6",
+    "zod": "^4.4.3"
+  }
+}
