@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const plugins = ["commands", "secrets", "scheduler", "github-pr", "vscode"];
+const plugins = ["commands", "secrets", "scheduler", "github-pr", "vscode", "shell-yeah"];
 const operations = ["setup", "check", "typecheck", "lint", "format", "format:check", "test"];
 const [operation, ...args] = process.argv.slice(2);
 const root = fileURLToPath(new URL("../", import.meta.url));

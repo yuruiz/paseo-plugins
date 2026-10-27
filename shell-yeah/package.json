@@ -1,0 +1,59 @@
+{
+  "name": "paseo-shell-yeah",
+  "version": "1.2.3",
+  "private": true,
+  "description": "Type /sh and a command to run it as you, in the agent's folder, with live output in the chat. The agent sees it only if you send it.",
+  "keywords": [
+    "command",
+    "paseo",
+    "paseo-plugin",
+    "shell",
+    "terminal"
+  ],
+  "homepage": "https://github.com/yuruiz/paseo-plugins/tree/main/shell-yeah#readme",
+  "license": "MIT",
+  "author": "Steve Castaneda",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yuruiz/paseo-plugins.git",
+    "directory": "shell-yeah"
+  },
+  "files": [
+    "paseo-plugin.json",
+    "OVERVIEW.md",
+    "index.client.tsx",
+    "index.server.ts",
+    "client/",
+    "server/",
+    "shared/",
+    "images/",
+    "icon.png",
+    "tsconfig.json",
+    "!**/*.test.ts"
+  ],
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "test": "node scripts/test.mjs"
+  },
+  "devDependencies": {
+    "@getpaseo/client": "^0.11.2",
+    "@getpaseo/plugin": "^0.11.2",
+    "@tanstack/react-query": "^5.90.11",
+    "@types/node": "^20.9.0",
+    "@types/react": "~19.2.0",
+    "node-pty": "1.2.0-beta.15",
+    "oxfmt": "^0.41.0",
+    "oxlint": "^1.43.0",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "typescript": "^5.9.3",
+    "zod": "^4.4.3"
+  },
+  "engines": {
+    "node": "^22.18.0 || >=23.6.0"
+  }
+}
