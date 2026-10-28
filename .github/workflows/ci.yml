@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        plugin: [commands, secrets, scheduler, github-pr, vscode, shell-yeah, skills]
+        plugin: [commands, secrets, scheduler, github-pr, vscode, shell-yeah, skills, mcp-pills]
         os: [ubuntu-latest]
         include:
           - plugin: secrets
