@@ -56,6 +56,9 @@ interface QuestionButtonProps {
   disabled?: boolean;
   primary?: boolean;
   icon?: string;
+  compact?: boolean;
+  variant?: "primary" | "secondary" | "ghost" | "success" | "tonal";
+  iconOnly?: boolean;
 }
 
 export function QuestionButton({
@@ -65,27 +68,73 @@ export function QuestionButton({
   disabled = false,
   primary = false,
   icon,
+  compact = false,
+  variant,
+  iconOnly = false,
 }: QuestionButtonProps) {
-  const color = primary ? theme.colors.accentForeground : theme.colors.foreground;
-  const opacity = disabled ? 0.5 : 1;
+  const appearance = variant ?? (primary ? "primary" : "secondary");
+  const palette = useMemo(() => {
+    if (appearance === "primary")
+      return {
+        color: theme.colors.accentForeground,
+        background: theme.colors.accent,
+        border: theme.colors.accent,
+      };
+    if (appearance === "success")
+      return {
+        color: theme.colors.foregroundMuted,
+        background: theme.colors.surface1,
+        border: theme.colors.border,
+      };
+    if (appearance === "tonal")
+      return {
+        color: theme.colors.foreground,
+        background: theme.colors.surface2,
+        border: theme.colors.border,
+      };
+    if (appearance === "ghost")
+      return {
+        color: theme.colors.foregroundMuted,
+        background: "transparent",
+        border: "transparent",
+      };
+    return {
+      color: theme.colors.foreground,
+      background: theme.colors.surface1,
+      border: theme.colors.border,
+    };
+  }, [appearance, theme]);
+  const { color } = palette;
+  let iconColor = color;
+  if (appearance === "tonal") iconColor = theme.colors.accent;
+  if (appearance === "success") iconColor = theme.colors.statusSuccess;
+  const opacity = disabled && appearance !== "success" ? 0.5 : 1;
   const style = useCallback(
-    ({ pressed }: PressableStateCallbackType) => ({
+    ({ pressed, hovered }: PressableStateCallbackType & { hovered?: boolean }) => ({
       flexDirection: "row" as const,
       justifyContent: "center" as const,
       alignItems: "center" as const,
-      gap: 8,
+      gap: compact ? 6 : 8,
       borderRadius: 6,
       borderWidth: 1,
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderColor: primary ? theme.colors.accent : theme.colors.border,
-      backgroundColor: primary ? theme.colors.accent : theme.colors.surface1,
+      paddingHorizontal: compact ? 8 : 12,
+      paddingVertical: compact ? 5 : 8,
+      borderColor: palette.border,
+      backgroundColor:
+        appearance === "ghost" && (hovered || pressed) ? theme.colors.surface2 : palette.background,
       opacity: pressed && !disabled ? 0.9 : opacity,
     }),
-    [theme, primary, disabled, opacity],
+    [theme, appearance, palette, disabled, opacity, compact],
   );
   const accessibilityState = useMemo(() => ({ disabled }), [disabled]);
-  const textStyle = useMemo(() => ({ color, fontSize: 14 }), [color]);
+  const textStyle = useMemo(
+    () => ({
+      color,
+      fontSize: compact ? 12 : 14,
+      fontWeight: appearance === "primary" ? ("600" as const) : ("400" as const),
+    }),
+    [color, compact, appearance],
+  );
   return (
     <Pressable
       accessibilityRole="button"
@@ -95,8 +144,8 @@ export function QuestionButton({
       onPress={onPress}
       style={style}
     >
-      {icon ? <Icon name={icon} size={14} color={color} /> : null}
-      <Text style={textStyle}>{label}</Text>
+      {icon ? <Icon name={icon} size={14} color={iconColor} /> : null}
+      {!iconOnly ? <Text style={textStyle}>{label}</Text> : null}
     </Pressable>
   );
 }

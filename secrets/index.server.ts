@@ -9,6 +9,7 @@ import {
   connectStatus,
   listConnectVaults,
   listConnectItems,
+  shareConnectItem,
 } from "./shared/onepassword.js";
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
 import { randomUUID } from "node:crypto";
@@ -27,6 +28,7 @@ import {
 } from "./shared/contracts.js";
 import { startRuntime } from "./server/runtime.js";
 import { resolveStateDirectory } from "./server/state-directory.js";
+import { sendConnectItem } from "./server/connect-share.js";
 
 export default function contribute(server: PluginServerContext) {
   let api: PluginHandlerContext["paseo"] | undefined;
@@ -92,6 +94,15 @@ export default function contribute(server: PluginServerContext) {
     items: await (await runtime).connect.listItems(input),
   }));
   server.handle(connectStatus, async () => (await runtime).connect.status());
+  server.handle(shareConnectItem, async ({ agentId, ...input }, { paseo }) => {
+    const agent = paseo.agents.ref(agentId);
+    await agent.refresh();
+    if (!agent.cwd || agent.archivedAt) throw new Error("Select an active agent before sharing.");
+    const { connect, broker } = await runtime;
+    return sendConnectItem(connect, broker, { ...input, agentId, cwd: agent.cwd }, (message) =>
+      agent.send(message),
+    );
+  });
   server.handle(mcpConnection, async (_, { paseo }) => {
     api = paseo;
     return { url: (await runtime).url };

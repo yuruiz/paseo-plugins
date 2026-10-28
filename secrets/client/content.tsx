@@ -9,19 +9,51 @@ import {
 import { QuestionButton, useQuestionStyles } from "./question-ui.js";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
-import { Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { grantNotification, listSecrets, revokeSecrets, type Grant } from "../shared/contracts.js";
 import { OutputReview, RequestContent } from "./review.js";
 import { SecretsForm } from "./form-view.js";
+import { ConnectedSecrets } from "./connect-browser.js";
 
 interface SecretsContentProps extends PluginHostProps {
   agentId: string;
   close?(): void;
 }
 
+const popoverStyles = StyleSheet.create({
+  // The desktop host caps the scroll viewport at 440px and adds 12px padding per side.
+  // Reserve that viewport before async loading: its entering animation must not snapshot
+  // the small loading state and later restore that state's lower anchor position.
+  desktop: { minHeight: 416, width: 360, maxWidth: "100%", gap: 12 },
+  compact: { gap: 12 },
+});
+
 export function SecretsPopover(props: PluginButtonContentProps) {
   if (props.context !== "agent") return null;
-  return <SecretsContent {...props} />;
+  return <SecretsPopoverContent key={`${props.host.id}:${props.agentId}`} {...props} />;
+}
+
+function SecretsPopoverContent(props: SecretsContentProps) {
+  const [showInput, setShowInput] = useState(false);
+  const bodyStyle = props.layout.compact ? popoverStyles.compact : popoverStyles.desktop;
+  const toggleInput = useCallback(() => setShowInput((value) => !value), []);
+  return (
+    <View style={bodyStyle}>
+      {showInput ? (
+        <>
+          <QuestionButton
+            theme={props.theme}
+            label="Back to secrets"
+            onPress={toggleInput}
+            compact
+          />
+          <SecretsContent {...props} />
+        </>
+      ) : (
+        <ConnectedSecrets {...props} onProvideSecrets={toggleInput} />
+      )}
+    </View>
+  );
 }
 
 export function SecretsTimeline(props: PluginTimelineItemProps<{ requestId: string }>) {

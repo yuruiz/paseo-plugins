@@ -67,7 +67,7 @@ export default function contribute(client: PluginClientContext) {
         workspaceId,
         agentId: agent.id,
         button: {
-          title: "Provide secrets",
+          title: "Browse Connect secrets",
           label: "Secrets",
           icon: "KeyRound",
           behavior: {
