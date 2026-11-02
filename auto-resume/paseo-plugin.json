@@ -1,0 +1,7 @@
+{
+  "id": "auto-resume",
+  "requirements": {
+    "paseo": ">=0.14.0 <0.15.0"
+  },
+  "build": [["npm", "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"]]
+}

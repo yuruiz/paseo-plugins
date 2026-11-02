@@ -14,6 +14,7 @@ Plugins for [Paseo](https://paseo.sh). Each plugin lives in its own top-level di
 | [Skills](skills/) | Search, preview and invoke skills backed by a SKILL.md file. | `skills` |
 | [Auth](auth/) | Reauthenticate Claude Code and Codex from conversation cards. | `auth` |
 | [MCP Pills](mcp-pills/) | Browse agent-scoped MCP configuration, tools, resources and prompts. | `mcp-pills` |
+| [Auto Resume](auto-resume/) | Resume Claude/Codex conversations after subscription quota resets. | `auto-resume` |
 
 ## Install
 
@@ -28,6 +29,7 @@ paseo plugin add git:yuruiz/paseo-plugins:vscode
 paseo plugin add git:yuruiz/paseo-plugins:shell-yeah
 paseo plugin add git:yuruiz/paseo-plugins:skills
 paseo plugin add git:yuruiz/paseo-plugins:mcp-pills
+paseo plugin add git:yuruiz/paseo-plugins:auto-resume
 paseo plugin add git:yuruiz/paseo-plugins:auth
 ```
 
