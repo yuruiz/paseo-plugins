@@ -38,13 +38,13 @@ export function parseOutput(raw: string, provider: Provider) {
 export function failureMessage(raw: string): string {
   const text = stripVTControlCharacters(raw);
   if (/device.{0,40}(?:disabled|not enabled|not allowed)|enable.{0,30}device/i.test(text))
-    return "请在 ChatGPT 安全设置中启用设备码登录；组织账号可能需要管理员允许。";
-  if (/expired|timed? ?out/i.test(text)) return "授权已过期，请重新开始登录。";
+    return "Enable device code sign-in in ChatGPT security settings. Organization accounts may require administrator approval.";
+  if (/expired|timed? ?out/i.test(text)) return "Authorization expired. Start sign-in again.";
   if (/ENOTFOUND|ECONN|fetch failed|network|certificate|TLS/i.test(text))
-    return "无法连接认证服务，请检查主机网络或证书配置后重试。";
+    return "Could not connect to the authentication service. Check the host network or certificate settings and try again.";
   if (/unknown (?:option|command)|unexpected argument/i.test(text))
-    return "当前 CLI 不支持此登录命令，请更新对应的 Claude Code 或 Codex CLI。";
+    return "This CLI version does not support the sign-in command. Update Claude Code or Codex.";
   if (/denied|access_denied|canceled|cancelled/i.test(text))
-    return "授权被取消或拒绝，请重新登录。";
-  return "登录未完成。请重新尝试，并确认账号与组织允许使用此登录方式。";
+    return "Authorization was canceled or denied. Sign in again.";
+  return "Sign-in did not complete. Try again and make sure your account and organization allow this sign-in method.";
 }

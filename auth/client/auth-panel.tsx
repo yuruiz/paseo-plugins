@@ -64,7 +64,7 @@ export function AuthPanel({
       await cache.cancelQueries({ queryKey: key, exact: true });
       if (kind === "start") return start(scope);
       if (kind === "check") return check(scope);
-      if (!view?.sessionId) throw new Error("此登录流程已失效，请重新开始。");
+      if (!view?.sessionId) throw new Error("This sign-in session has expired. Start again.");
       const input = { ...scope, sessionId: view.sessionId };
       if (kind === "cancel") return cancel(input);
       if (kind === "code") {
@@ -73,7 +73,7 @@ export function AuthPanel({
         setCode("");
         return submit({ ...input, code: value });
       }
-      if (!scope.agentId) throw new Error("请在对话里恢复当前会话。");
+      if (!scope.agentId) throw new Error("Open the conversation to recover its session.");
       const result = await restore({ ...input, agentId: scope.agentId, action: kind });
       setNotice(result.message);
       return get(scope);
@@ -122,25 +122,25 @@ export function AuthPanel({
     try {
       await openExternalUrl(view.url);
     } catch {
-      setLinkError("无法打开浏览器，请复制授权链接后手动打开。");
+      setLinkError("Could not open the browser. Copy the authorization link and open it manually.");
     }
   }
   async function copy(value: string, description: string) {
     try {
       await copyText(value);
-      setNotice(description + "已复制。");
+      setNotice(description + " copied.");
     } catch {
-      setLinkError("无法复制，请长按或选中文字手动复制。");
+      setLinkError("Could not copy. Select the text or press and hold to copy it manually.");
     }
   }
   const label = scope.provider === "claude" ? "Claude Code" : "Codex";
   const statuses = {
-    unchecked: "尚未检查",
-    authenticated: "已检测到登录凭据",
-    unauthenticated: "需要登录",
-    missing: "未安装",
-    unsupported: "由其他配置管理",
-    error: "检查失败",
+    unchecked: "Not checked",
+    authenticated: "Sign-in credentials found",
+    unauthenticated: "Sign-in required",
+    missing: "Not installed",
+    unsupported: "Managed by provider configuration",
+    error: "Check failed",
   };
   return (
     <View
@@ -157,19 +157,19 @@ export function AuthPanel({
     >
       <Text style={{ color: colors.foreground, fontSize: 17, fontWeight: "600" }}>
         {label}
-        {required && view?.phase !== "succeeded" ? " · 需要重新授权" : ""}
+        {required && view?.phase !== "succeeded" ? " · Sign-in required" : ""}
       </Text>
-      <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>登录主机：{host.label}</Text>
+      <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>Host: {host.label}</Text>
       {!view && !query.isError && (
-        <Text style={{ color: colors.foregroundMuted }}>正在读取状态…</Text>
+        <Text style={{ color: colors.foregroundMuted }}>Loading status…</Text>
       )}
       {query.isError && (
         <View style={{ gap: 8 }}>
           <Text style={{ color: colors.foreground }}>
-            暂时无法读取登录状态，请确认主机在线后重试。
+            Could not read the sign-in status. Make sure the host is online and try again.
           </Text>
           {button(
-            "重试",
+            "Retry",
             () => {
               void query.refetch();
             },
@@ -181,9 +181,9 @@ export function AuthPanel({
         <>
           <Text style={{ color: colors.foregroundMuted }}>
             {busy
-              ? "登录进行中"
+              ? "Sign-in in progress"
               : view.phase === "succeeded"
-                ? "✓ 登录成功"
+                ? "✓ Signed in successfully"
                 : statuses[view.status]}
             {view.account ? " · " + view.account : ""}
           </Text>
@@ -201,20 +201,20 @@ export function AuthPanel({
             >
               <Text style={{ color: colors.foreground, fontWeight: "600" }}>
                 {view.lastCheck.kind === "skipped"
-                  ? "未执行 CLI 检查"
+                  ? "CLI check skipped"
                   : view.lastCheck.status === "error"
-                    ? "检查失败"
-                    : "检查完成：" + statuses[view.lastCheck.status]}
+                    ? "Check failed"
+                    : "Check complete: " + statuses[view.lastCheck.status]}
               </Text>
               <Text style={{ color: colors.foreground }}>{view.lastCheck.message}</Text>
               <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>
-                检查时间：{new Date(view.lastCheck.at).toLocaleTimeString()}
+                Checked at: {new Date(view.lastCheck.at).toLocaleTimeString()}
               </Text>
             </View>
           )}
           {required && view.status === "authenticated" && view.phase !== "succeeded" && (
             <Text style={{ color: colors.foregroundMuted }}>
-              已保存的凭据仍可能失效。若刚才的请求被拒绝，请重新登录。
+              Saved credentials may have expired. Sign in again if your last request was rejected.
             </Text>
           )}
           {view.deviceCode && (
@@ -230,25 +230,27 @@ export function AuthPanel({
               >
                 {view.deviceCode}
               </Text>
-              {button("复制验证码", () => {
-                void copy(view.deviceCode!, "验证码");
+              {button("Copy device code", () => {
+                void copy(view.deviceCode!, "Device code");
               })}
-              <Text style={{ color: colors.foregroundMuted }}>在授权网页输入这个验证码。</Text>
+              <Text style={{ color: colors.foregroundMuted }}>
+                Enter this device code on the authorization website.
+              </Text>
             </View>
           )}
           {view.url && (
             <View style={{ gap: 8 }}>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                 {button(
-                  "打开授权页面",
+                  "Open authorization page",
                   () => {
                     void open();
                   },
                   false,
                   true,
                 )}
-                {button("复制授权链接", () => {
-                  void copy(view.url!, "授权链接");
+                {button("Copy authorization link", () => {
+                  void copy(view.url!, "Authorization link");
                 })}
               </View>
               {linkError && (
@@ -261,17 +263,17 @@ export function AuthPanel({
           {view.expectsCode && (
             <View style={{ gap: 8 }}>
               <Text style={{ color: colors.foregroundMuted }}>
-                如果网页显示授权码，请粘贴到这里：
+                If the website displays an authorization code, paste it here:
               </Text>
               <TextInput
-                accessibilityLabel="授权码"
+                accessibilityLabel="Authorization code"
                 value={code}
                 onChangeText={setCode}
                 autoCapitalize="none"
                 autoCorrect={false}
                 secureTextEntry
                 maxLength={4096}
-                placeholder="粘贴授权码"
+                placeholder="Paste authorization code"
                 placeholderTextColor={colors.foregroundMuted}
                 style={{
                   color: colors.foreground,
@@ -282,22 +284,27 @@ export function AuthPanel({
                   minHeight: 44,
                 }}
               />
-              {button("提交授权码", () => action.mutate("code"), disabled || !code.trim(), true)}
+              {button(
+                "Submit authorization code",
+                () => action.mutate("code"),
+                disabled || !code.trim(),
+                true,
+              )}
             </View>
           )}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {busy ? (
-              button("取消登录", () => action.mutate("cancel"), disabled)
+              button("Cancel sign-in", () => action.mutate("cancel"), disabled)
             ) : (
               <>
                 {button(
-                  view.phase === "failed" || view.phase === "expired" ? "重新开始" : "重新登录",
+                  view.phase === "failed" || view.phase === "expired" ? "Start again" : "Sign in",
                   () => action.mutate("start"),
                   disabled || !view.canLogin,
                   true,
                 )}
                 {button(
-                  checking ? "正在检查…" : "检查状态",
+                  checking ? "Checking…" : "Check status",
                   () => action.mutate("check"),
                   disabled,
                 )}
@@ -306,36 +313,39 @@ export function AuthPanel({
             {scope.agentId &&
               view.phase === "succeeded" &&
               !view.reloaded &&
-              button("重新加载当前会话", () => action.mutate("reload"), disabled, true)}
+              button("Reload current session", () => action.mutate("reload"), disabled, true)}
             {scope.agentId &&
               view.phase === "succeeded" &&
               view.reloaded &&
               !view.continued &&
-              button("继续任务", () => action.mutate("continue"), disabled, true)}
+              button("Continue task", () => action.mutate("continue"), disabled, true)}
           </View>
           {view.phase === "succeeded" && scope.agentId && !view.reloaded && (
             <Text style={{ color: colors.foregroundMuted }}>
-              重新加载后使用新的凭据。此操作会重启当前会话进程，保留对话记录。
+              Reload to use the new credentials. This restarts the current session process and keeps
+              your conversation history.
             </Text>
           )}
           {view.continued && (
-            <Text style={{ color: colors.foregroundMuted }}>已请求继续任务。</Text>
+            <Text style={{ color: colors.foregroundMuted }}>Task continuation requested.</Text>
           )}
           {busy && (
             <Text style={{ color: colors.foregroundMuted }}>
-              可以切换页面，登录会继续等待；点击「取消登录」才会终止。
+              You can leave this page while sign-in continues. Choose Cancel sign-in to stop it.
             </Text>
           )}
         </>
       )}
       {action.isPending && (
         <Text style={{ color: colors.foregroundMuted }}>
-          {checking ? "正在检查 CLI 登录状态…" : "正在处理…"}
+          {checking ? "Checking CLI sign-in status…" : "Working…"}
         </Text>
       )}
       {action.error && (
         <Text accessibilityRole="alert" style={{ color: colors.foreground }}>
-          {action.error instanceof Error ? action.error.message : "操作失败，请重试。"}
+          {action.error instanceof Error
+            ? action.error.message
+            : "Something went wrong. Please try again."}
         </Text>
       )}
       {!!notice && <Text style={{ color: colors.foregroundMuted }}>{notice}</Text>}

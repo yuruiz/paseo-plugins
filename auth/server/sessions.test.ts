@@ -155,7 +155,10 @@ describe("login lifecycle", () => {
 describe("status check feedback", () => {
   it("records why a check was skipped and preserves it across state reads", async () => {
     const { sessions, calls } = fixture();
-    const blocked = { ...target, problem: "配置使用 OPENAI_API_KEY，无法执行此检查。" };
+    const blocked = {
+      ...target,
+      problem: "The configuration uses OPENAI_API_KEY, so this check cannot run.",
+    };
     expect(sessions.state(blocked).lastCheck).toBeUndefined();
     const result = await sessions.check(blocked);
     expect(result.lastCheck).toEqual({
@@ -171,7 +174,7 @@ describe("status check feedback", () => {
   it("reports missing executables without suggesting that credentials were inspected", async () => {
     const { sessions, calls } = fixture();
     expect(
-      (await sessions.check({ ...target, missing: true, problem: "CLI 未安装" })).lastCheck,
+      (await sessions.check({ ...target, missing: true, problem: "CLI not installed" })).lastCheck,
     ).toMatchObject({ kind: "skipped", status: "missing" });
     expect(calls).toHaveLength(0);
   });
@@ -207,7 +210,7 @@ describe("status check feedback", () => {
     expect((await checking).lastCheck).toMatchObject({
       kind: "checked",
       status: "error",
-      message: expect.stringContaining("无法检查"),
+      message: expect.stringContaining("Could not check"),
     });
   });
 });

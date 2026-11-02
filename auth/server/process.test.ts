@@ -35,12 +35,12 @@ describe("CLI process adapter", () => {
   });
   it("terminates commands that exceed a status-check deadline", async () => {
     await expect(capture(target, ["-e", "setInterval(()=>{},1000)"], launch, 50)).rejects.toThrow(
-      "无法检查",
+      "Could not check",
     );
   });
   it("handles a missing executable without exposing raw process errors", async () => {
     await expect(capture({ ...target, command: "/nonexistent/auth-cli" }, [])).rejects.toThrow(
-      "无法检查",
+      "Could not check",
     );
   });
 });

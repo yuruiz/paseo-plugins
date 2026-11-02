@@ -15,17 +15,17 @@ paseo plugin add git:yuruiz/paseo-plugins:auth
 paseo plugin install "$PWD/auth"
 ```
 
-Install on the daemon that runs your agents. The sidebar screen's host picker selects which machine receives the login. Creating/building this package does not install it or change existing logins.
+Install on the daemon that runs your agents. The Accounts screen's host picker selects which machine receives the login. Creating/building this package does not install it or change existing logins.
 
 ## Use
 
 - A recognized provider authentication failure adds one **Auth card** to the current conversation. Repeated errors update the same row.
-- Type `/auth`, or choose **在当前对话登录** in Command Center, to show the card manually.
-- **账号登录** in the sidebar and **管理 Claude / Codex 登录** in Command Center provide host-level manual login.
-- **检查状态** shows progress and keeps a timestamped result, including an explicit explanation when CLI inspection is skipped by unsupported configuration. Repeated checks still report completion when the account status is unchanged.
-- Click **重新登录**. For Codex, copy the device code and enter it on the authorization website. For Claude, open the website and paste its authorization code into the card if prompted.
-- The card updates when the CLI exits successfully and its status command confirms saved credentials. Switching pages does not stop login; **取消登录** does. Sessions expire after ten minutes.
-- After login, click **重新加载当前会话**, then **继续任务** if desired. Reload restarts only that provider session and preserves conversation history. Running turns and pending permission requests block recovery. Continue sends a new instruction to inspect completed work and resume; it does not blindly replay the previous prompt.
+- Type `/auth`, or choose **Sign in from this conversation** in Command Center, to show the card manually.
+- Choose **Manage Claude / Codex sign-in** in Command Center for host-level manual login. Auth uses English UI text and does not add a sidebar footer item.
+- **Check status** shows progress and keeps a timestamped result, including an explicit explanation when CLI inspection is skipped by unsupported configuration. Repeated checks still report completion when the account status is unchanged.
+- Click **Sign in**. For Codex, copy the device code and enter it on the authorization website. For Claude, open the website and paste its authorization code into the card if prompted.
+- The card updates when the CLI exits successfully and its status command confirms saved credentials. Switching pages does not stop login; **Cancel sign-in** does. Sessions expire after ten minutes.
+- After login, click **Reload current session**, then **Continue task** if desired. Reload restarts only that provider session and preserves conversation history. Running turns and pending permission requests block recovery. Continue sends a new instruction to inspect completed work and resume; it does not blindly replay the previous prompt.
 
 ## Scope and limitations
 
@@ -33,7 +33,7 @@ The plugin uses the daemon's environment plus the selected provider's `env` over
 
 Environment-managed API keys/tokens, cloud-provider authentication, and custom API endpoints are not replaced by browser login. Such detected configurations show an explanation instead of starting login. Provider-specific settings files can also select other authentication mechanisms; those are owned by the CLI. This first version handles account OAuth login, not MCP server OAuth or arbitrary third-party providers.
 
-Automatic detection uses failed-turn error codes/messages and error snapshots in the agent directory, not model replies or tool output. Startup failures are picked up while a client is connected. Unrecognized failures can always use `/auth`. Rate limits, generic 403 responses and network failures are not classified as expired login. `检查状态` checks locally recognized credentials; it is not an authenticated API health check and does not prove an existing token is still valid.
+Automatic detection uses failed-turn error codes/messages and error snapshots in the agent directory, not model replies or tool output. Startup failures are picked up while a client is connected. Unrecognized failures can always use `/auth`. Rate limits, generic 403 responses and network failures are not classified as expired login. `Check status` checks locally recognized credentials; it is not an authenticated API health check and does not prove an existing token is still valid.
 
 Paseo 0.14's published SDK still exposes `server.on("agent.turn_ended")`; this plugin uses that installed contract. Newer documentation also describes a renamed `addHook` API. Compatibility is pinned to 0.14.x until that migration is verified.
 

@@ -104,10 +104,10 @@ describe("conversation cards and recovery", () => {
     const f = fixture();
     const input = { agentId: "agent", provider: "claude", sessionId: "session", action: "reload" };
     f.agent.status = "running";
-    await expect(f.call("auth.recover", input)).rejects.toThrow("正在运行");
+    await expect(f.call("auth.recover", input)).rejects.toThrow("is running");
     f.agent.status = "idle";
     f.agent.pendingPermissions = [{}];
-    await expect(f.call("auth.recover", input)).rejects.toThrow("正在运行");
+    await expect(f.call("auth.recover", input)).rejects.toThrow("is running");
     expect(f.ref.reload).not.toHaveBeenCalled();
   });
   it("requires successful login and explicit reload before continuing", async () => {
@@ -119,9 +119,9 @@ describe("conversation cards and recovery", () => {
       action: "continue",
     };
     mocks.authenticated.mockReturnValue(false);
-    await expect(f.call("auth.recover", input)).rejects.toThrow("先完成登录");
+    await expect(f.call("auth.recover", input)).rejects.toThrow("Complete sign-in first");
     mocks.authenticated.mockReturnValue(true);
-    await expect(f.call("auth.recover", input)).rejects.toThrow("先重新加载");
+    await expect(f.call("auth.recover", input)).rejects.toThrow("Reload the current session first");
     expect(f.ref.send).not.toHaveBeenCalled();
   });
   it("reload and continue are idempotent per agent and login session", async () => {

@@ -63,7 +63,7 @@ export function makeTarget(
       command = configured[0];
     else
       problem =
-        "此 provider 使用带参数的自定义启动命令，暂不支持自动登录。请使用官方 CLI 的独立可执行文件。";
+        "This provider uses a custom launch command with arguments, which Auth does not yet support. Use the official CLI executable directly.";
   }
   const managedKeys =
     provider === "claude"
@@ -85,9 +85,9 @@ export function makeTarget(
   const managed = managedKeys.filter((key) => env[key] && env[key] !== "0" && env[key] !== "false");
   if (managed.length) {
     const reason =
-      "检测到认证环境变量 " +
-      managed.join("、") +
-      "。请在对应 provider 配置中更新凭据；网页登录不会替换该配置。";
+      "Detected authentication environment variables: " +
+      managed.join(", ") +
+      ". Update the credentials in the provider configuration. Browser sign-in does not replace them.";
     problem = problem ? problem + " " + reason : reason;
   }
   if (
@@ -95,15 +95,16 @@ export function makeTarget(
     env.ANTHROPIC_BASE_URL &&
     env.ANTHROPIC_BASE_URL.replace(/\/$/, "") !== "https://api.anthropic.com"
   )
-    problem = "此 provider 使用自定义 API 地址，请更新该服务的凭据。";
+    problem = "This provider uses a custom API endpoint. Update the credentials for that service.";
   if (
     provider === "codex" &&
     env.OPENAI_BASE_URL &&
     env.OPENAI_BASE_URL.replace(/\/$/, "") !== "https://api.openai.com/v1"
   )
-    problem = "此 provider 使用自定义 API 地址，请更新该服务的凭据。";
+    problem = "This provider uses a custom API endpoint. Update the credentials for that service.";
   if (process.platform === "win32")
-    problem = "Auth 第一版支持 macOS / Linux 主机；可从手机或 Web 客户端操作。";
+    problem =
+      "Auth currently supports macOS and Linux hosts. You can use it from mobile or web clients.";
   // Hash auth-relevant launch inputs, never expose them to the client. Separate homes must not share a login.
   const identity = Object.fromEntries(
     Object.entries(env)
@@ -127,12 +128,13 @@ export async function resolveTarget(
   if (input.agentId) {
     const snapshot = await paseo.agents.ref(input.agentId).refresh();
     if (!snapshot?.agent || snapshot.agent.archivedAt)
-      throw new Error("当前会话已不存在或已归档。");
+      throw new Error("The current session no longer exists or has been archived.");
     id = snapshot.agent.provider;
     cwd = snapshot.agent.cwd;
   }
   const base = providerOf(id, config.providers);
-  if (base !== input.provider) throw new Error("此会话不使用指定的 Claude / Codex provider。");
+  if (base !== input.provider)
+    throw new Error("This session does not use the selected Claude / Codex provider.");
   const original = object(config.providers[base]);
   const custom = object(config.providers[id]);
   const merged = {
@@ -161,7 +163,7 @@ export async function resolveTarget(
     if (found) target.command = found;
     else {
       target.missing = true;
-      target.problem = "未找到官方 CLI。请先在此主机安装对应的 Claude Code / Codex。";
+      target.problem = "Official CLI not found. Install Claude Code or Codex on this host first.";
     }
   }
   return target;

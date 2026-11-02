@@ -37,7 +37,7 @@ const blocked: AuthView = {
   provider: "codex",
   phase: "idle",
   status: "unsupported",
-  message: "配置使用 OPENAI_API_KEY",
+  message: "The configuration uses OPENAI_API_KEY",
   canLogin: false,
   expectsCode: false,
 };
@@ -102,22 +102,22 @@ describe("status check with the real QueryClient", () => {
       return saved;
     });
     await mount();
-    expect(text()).not.toContain("未执行 CLI 检查");
+    expect(text()).not.toContain("CLI check skipped");
     await act(async () => {
-      button("检查状态").props.onPress();
+      button("Check status").props.onPress();
     });
     await flush();
-    expect(text()).toContain("未执行 CLI 检查");
-    expect(text()).toContain("检查时间：");
+    expect(text()).toContain("CLI check skipped");
+    expect(text()).toContain("Checked at: ");
     expect(text()).toContain("OPENAI_API_KEY");
     await act(async () => {
       await client.invalidateQueries({ queryKey: ["auth"] });
     });
     await flush();
-    expect(text()).toContain("未执行 CLI 检查");
+    expect(text()).toContain("CLI check skipped");
     await act(async () => tree.unmount());
     await mount();
-    expect(text()).toContain("未执行 CLI 检查");
+    expect(text()).toContain("CLI check skipped");
   });
   it("shows checking progress, disables repeated clicks, and reports an unchanged successful status", async () => {
     const reply = deferred<AuthView>();
@@ -125,23 +125,23 @@ describe("status check with the real QueryClient", () => {
       ...blocked,
       status: "authenticated",
       canLogin: true,
-      message: "CLI 检测到已登录",
+      message: "The CLI found saved sign-in credentials",
     };
     state.rpc.mockImplementation((method: string) =>
       method === "auth.check" ? reply.promise : Promise.resolve(saved),
     );
     await mount();
     await act(async () => {
-      button("检查状态").props.onPress();
+      button("Check status").props.onPress();
     });
     await flush();
-    expect(button("正在检查…").props.disabled).toBe(true);
-    expect(text()).toContain("正在检查 CLI 登录状态…");
+    expect(button("Checking…").props.disabled).toBe(true);
+    expect(text()).toContain("Checking CLI sign-in status…");
     saved = checked(saved);
     await act(async () => reply.resolve(saved));
     await flush();
-    expect(text()).toContain("检查完成：已检测到登录凭据");
-    expect(button("检查状态").props.disabled).toBe(false);
+    expect(text()).toContain("Check complete: Sign-in credentials found");
+    expect(button("Check status").props.disabled).toBe(false);
   });
   it("does not let an older in-flight state read erase the check result", async () => {
     let saved = blocked;
@@ -162,7 +162,7 @@ describe("status check with the real QueryClient", () => {
       exact: true,
     });
     await act(async () => {
-      button("检查状态").props.onPress();
+      button("Check status").props.onPress();
     });
     await flush();
     await act(async () => {
@@ -170,22 +170,22 @@ describe("status check with the real QueryClient", () => {
       await pending;
     });
     await flush();
-    expect(text()).toContain("未执行 CLI 检查");
+    expect(text()).toContain("CLI check skipped");
     expect(client.getQueryData<AuthView>(["auth", "host", "codex", "agent"])?.lastCheck?.kind).toBe(
       "skipped",
     );
   });
   it("shows RPC failure instead of silently resetting the button", async () => {
     state.rpc.mockImplementation(async (method: string) => {
-      if (method === "auth.check") throw new Error("连接已断开，请重试");
+      if (method === "auth.check") throw new Error("Connection lost. Please try again");
       return blocked;
     });
     await mount();
     await act(async () => {
-      button("检查状态").props.onPress();
+      button("Check status").props.onPress();
     });
     await flush();
-    expect(text()).toContain("连接已断开，请重试");
-    expect(button("检查状态").props.disabled).toBe(false);
+    expect(text()).toContain("Connection lost. Please try again");
+    expect(button("Check status").props.disabled).toBe(false);
   });
 });

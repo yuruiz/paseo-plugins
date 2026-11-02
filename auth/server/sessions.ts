@@ -78,7 +78,7 @@ export class AuthSessions {
       status: "unchecked",
       canLogin: true,
       expectsCode: false,
-      message: "尚未检查登录状态。",
+      message: "Sign-in status has not been checked yet.",
     };
   }
   private prune() {
@@ -93,20 +93,21 @@ export class AuthSessions {
     }
   }
   async check(target: Target): Promise<AuthView> {
-    if (this.disposed) throw new Error("插件正在停止。");
+    if (this.disposed) throw new Error("The plugin is shutting down.");
     const currentView = this.state(target);
     if (target.problem || active(currentView)) {
       this.report(
         target,
         "skipped",
         currentView,
-        target.problem ?? "登录正在进行，请完成授权后再检查。",
+        target.problem ?? "Sign-in is in progress. Complete authorization before checking again.",
       );
       return this.state(target);
     }
     const pending = this.checks.get(target.key);
     if (pending) return pending;
-    if (this.checks.size >= 4) throw new Error("正在检查多个账号，请稍后再试。");
+    if (this.checks.size >= 4)
+      throw new Error("Several accounts are being checked. Please try again shortly.");
     const observed = this.sessions.get(target.key);
     const work = this.inspect(target)
       .then((result) => {
@@ -142,26 +143,28 @@ export class AuthSessions {
           return {
             status: "authenticated",
             account: typeof data.email === "string" ? data.email.slice(0, 200) : undefined,
-            message: "CLI 检测到已登录；凭据有效性以实际请求为准。",
+            message:
+              "The CLI found saved sign-in credentials. A successful request is needed to confirm they are still valid.",
           };
         if (data.loggedIn === false)
           return {
             status: "unauthenticated",
             account: undefined,
-            message: "尚未登录或登录已失效。",
+            message: "You are not signed in, or your sign-in has expired.",
           };
       } else {
         if (result.code === 0 && /logged in/i.test(result.output))
           return {
             status: "authenticated",
             account: undefined,
-            message: "CLI 检测到已登录；凭据有效性以实际请求为准。",
+            message:
+              "The CLI found saved sign-in credentials. A successful request is needed to confirm they are still valid.",
           };
         if (/not logged in/i.test(result.output))
           return {
             status: "unauthenticated",
             account: undefined,
-            message: "尚未登录或登录已失效。",
+            message: "You are not signed in, or your sign-in has expired.",
           };
       }
       return { status: "error", account: undefined, message: failureMessage(result.output) };
@@ -169,16 +172,18 @@ export class AuthSessions {
       return {
         status: "error",
         account: undefined,
-        message: "无法检查登录状态，请确认 CLI 可用后重试。",
+        message: "Could not check sign-in status. Make sure the CLI is available and try again.",
       };
     }
   }
   start(target: Target): AuthView {
-    if (this.disposed) throw new Error("插件正在停止。");
+    if (this.disposed) throw new Error("The plugin is shutting down.");
     if (target.problem) return this.state(target);
     if (active(this.state(target))) return this.state(target);
     if ([...this.sessions.values()].filter((s) => active(s.view)).length >= 4)
-      throw new Error("正在进行的登录过多，请完成或取消后再试。");
+      throw new Error(
+        "Too many sign-ins are in progress. Complete or cancel one before trying again.",
+      );
     this.prune();
     this.reports.delete(this.reportKey(target));
     const entry: Session = {
@@ -187,7 +192,7 @@ export class AuthSessions {
         phase: "starting",
         status: "unchecked",
         sessionId: randomUUID(),
-        message: "正在启动登录…",
+        message: "Starting sign-in…",
         canLogin: true,
         expectsCode: false,
         expiresAt: Date.now() + this.ttl,
@@ -200,7 +205,7 @@ export class AuthSessions {
     const current = () =>
       this.sessions.get(target.key) === entry && active(entry.view) && !this.disposed;
     entry.timer = setTimeout(() => {
-      if (current()) this.finish(entry, "expired", "授权等待已超时，请重新登录。");
+      if (current()) this.finish(entry, "expired", "Authorization timed out. Sign in again.");
     }, this.ttl);
     entry.timer.unref();
     try {
@@ -212,7 +217,11 @@ export class AuthSessions {
             if (!current()) return;
             entry.buffer += text;
             if (entry.buffer.length > 65536) {
-              this.finish(entry, "failed", "登录输出异常，请检查 CLI 版本后重试。");
+              this.finish(
+                entry,
+                "failed",
+                "Unexpected sign-in output. Check the CLI version and try again.",
+              );
               return;
             }
             const parsed = parseOutput(entry.buffer, target.provider);
@@ -222,7 +231,8 @@ export class AuthSessions {
               ...(parsed.deviceCode ? { deviceCode: parsed.deviceCode } : {}),
               expectsCode: parsed.expectsCode && !entry.submitted,
               phase: "waiting",
-              message: "请在浏览器完成授权，完成后此处会自动更新。",
+              message:
+                "Complete authorization in your browser. This card will update automatically.",
             };
           },
           exit: (code) => {
@@ -238,7 +248,7 @@ export class AuthSessions {
                 url: undefined,
                 deviceCode: undefined,
                 expectsCode: false,
-                message: "正在确认登录结果…",
+                message: "Verifying sign-in…",
               };
               entry.buffer = "";
               const result = await this.inspect(target);
@@ -248,44 +258,48 @@ export class AuthSessions {
                 entry,
                 result.status === "authenticated" ? "succeeded" : "failed",
                 result.status === "authenticated"
-                  ? "登录成功。"
-                  : "登录命令已结束，但未能确认凭据已保存，请检查状态后重试。",
+                  ? "Signed in successfully."
+                  : "The sign-in command finished, but saved credentials could not be confirmed. Check the status and try again.",
               );
             })();
           },
           error: () => {
             if (current())
-              this.finish(entry, "failed", "无法运行登录命令，请检查此主机的 CLI 安装。");
+              this.finish(
+                entry,
+                "failed",
+                "Could not run the sign-in command. Check the CLI installation on this host.",
+              );
           },
         },
       );
     } catch {
-      this.finish(entry, "failed", "无法启动登录进程。");
+      this.finish(entry, "failed", "Could not start the sign-in process.");
     }
     return this.state(target);
   }
   private entry(target: Target, id: string): Session {
     const entry = this.sessions.get(target.key);
     if (!entry || entry.view.sessionId !== id)
-      throw new Error("此登录流程已失效，请刷新后重新开始。");
+      throw new Error("This sign-in session has expired. Refresh and start again.");
     return entry;
   }
   cancel(target: Target, id: string): AuthView {
     const entry = this.entry(target, id);
-    if (active(entry.view)) this.finish(entry, "canceled", "登录已取消。");
+    if (active(entry.view)) this.finish(entry, "canceled", "Sign-in canceled.");
     return this.state(target);
   }
   submit(target: Target, id: string, code: string): AuthView {
     const entry = this.entry(target, id);
     if (!active(entry.view) || !entry.view.expectsCode || !entry.process)
-      throw new Error("当前流程不接受授权码。");
+      throw new Error("This sign-in session is not accepting an authorization code.");
     if (!/^[A-Za-z0-9_~.\-#]{1,4096}$/.test(code))
-      throw new Error("授权码格式无效，请只粘贴网页显示的授权码。");
+      throw new Error("Invalid authorization code. Paste only the code shown on the website.");
     entry.process.write(code);
     entry.submitted = true;
     entry.buffer = "";
     entry.view.expectsCode = false;
-    entry.view.message = "授权码已提交，等待登录完成…";
+    entry.view.message = "Authorization code submitted. Waiting for sign-in to complete…";
     return this.state(target);
   }
   authenticated(target: Target, id: string): boolean {
@@ -310,7 +324,8 @@ export class AuthSessions {
   async dispose() {
     this.disposed = true;
     for (const entry of this.sessions.values())
-      if (active(entry.view)) this.finish(entry, "canceled", "插件已停止，请重新登录。");
+      if (active(entry.view))
+        this.finish(entry, "canceled", "The plugin stopped. Start sign-in again.");
     for (const proc of this.processes) proc.stop();
     await Promise.allSettled(this.checks.values());
     this.sessions.clear();

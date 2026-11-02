@@ -45,7 +45,7 @@ export default function contribute(server: PluginServerContext) {
     const provider = providerOf(agent.provider, config.providers);
     if (!provider) {
       if (automatic) return { shown: false };
-      throw new Error("Auth 支持 Claude Code 和 Codex 会话。");
+      throw new Error("Auth supports Claude Code and Codex sessions.");
     }
     const fingerprint = createHash("sha256")
       .update(JSON.stringify([agent.provider, error]))
@@ -94,44 +94,49 @@ export default function contribute(server: PluginServerContext) {
     recovered.delete(agent.id);
   });
   server.handle(recover, async (input, context) => {
-    if (recoveryLocks.has(input.agentId)) throw new Error("此会话正在恢复，请稍候。");
+    if (recoveryLocks.has(input.agentId))
+      throw new Error("This session is being recovered. Please wait.");
     recoveryLocks.add(input.agentId);
     try {
       const target = await resolveTarget(input, context);
       if (!sessions.authenticated(target, input.sessionId))
-        throw new Error("请先完成登录，再恢复会话。");
+        throw new Error("Complete sign-in first, then recover the session.");
       const ref = context.paseo.agents.ref(input.agentId);
       const snapshot = await ref.refresh();
       const agent = snapshot?.agent;
-      if (!agent || agent.archivedAt) throw new Error("此会话已不存在或已归档。");
+      if (!agent || agent.archivedAt)
+        throw new Error("This session no longer exists or has been archived.");
       if (
         agent.status === "running" ||
         agent.status === "initializing" ||
         agent.activeTurn ||
         agent.pendingPermissions.length
       )
-        throw new Error("此会话正在运行或等待操作，请先让它停止后再恢复。");
+        throw new Error(
+          "This session is running or waiting for an action. Let it stop before recovering it.",
+        );
       const previous = recovered.get(input.agentId);
       if (input.action === "reload") {
         if (previous?.sessionId !== input.sessionId) {
           const result = await ref.reload();
           if (!result?.agent || result.agent.status === "error")
-            throw new Error("会话重新加载失败，请查看当前会话错误后重试。");
+            throw new Error("Could not reload the session. Review its error and try again.");
           if (recovered.size > 500) recovered.delete(recovered.keys().next().value!);
           recovered.set(input.agentId, { sessionId: input.sessionId, continued: false });
           reported.delete(input.agentId);
         }
-        return { reloaded: true, message: "会话已重新加载。你可以继续任务。" };
+        return { reloaded: true, message: "Session reloaded. You can now continue the task." };
       }
-      if (previous?.sessionId !== input.sessionId) throw new Error("请先重新加载当前会话。");
+      if (previous?.sessionId !== input.sessionId)
+        throw new Error("Reload the current session first.");
       if (!previous.continued) {
         // Mark before sending: a lost acknowledgement must not duplicate an already delivered task.
         previous.continued = true;
         await ref.send(
-          "请继续上一个因认证失败而中断的任务。先检查已经完成的步骤，避免重复执行操作。",
+          "Continue the previous task that was interrupted by an authentication failure. Check which steps have already completed before proceeding to avoid repeating actions.",
         );
       }
-      return { reloaded: true, message: "已发送继续任务的请求。" };
+      return { reloaded: true, message: "The request to continue the task has been sent." };
     } finally {
       recoveryLocks.delete(input.agentId);
     }

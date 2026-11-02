@@ -50,7 +50,8 @@ export const launch: Launch = (target, args, events) => {
   });
   return {
     write(code) {
-      if (ended || !child.stdin.writable) throw new Error("登录进程已结束，请重新开始。");
+      if (ended || !child.stdin.writable)
+        throw new Error("The sign-in process has ended. Start again.");
       child.stdin.write(code + "\n");
     },
     stop() {
@@ -82,7 +83,7 @@ export function capture(
       settled = true;
       clearTimeout(timer);
       if (result) resolve(result);
-      else reject(new Error("无法检查登录状态，请检查 CLI 和主机网络。"));
+      else reject(new Error("Could not check sign-in status. Check the CLI and host network."));
     };
     const timer = setTimeout(() => {
       proc?.stop();

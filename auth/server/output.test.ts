@@ -38,7 +38,7 @@ describe("official login output", () => {
   it("never reflects raw errors or credentials", () => {
     const raw = "Access token: sk-secret-private auth=secret";
     expect(failureMessage(raw)).not.toContain("secret");
-    expect(failureMessage("device authentication is not enabled")).toContain("设备码");
+    expect(failureMessage("device authentication is not enabled")).toContain("device code");
   });
 });
 describe("provider authentication failures", () => {

@@ -22,16 +22,16 @@ describe("credential scopes", () => {
   });
   it("does not silently replace environment-based credentials", () => {
     expect(makeTarget("claude", "/work", {}, { ANTHROPIC_API_KEY: "secret" }).problem).toContain(
-      "环境变量",
+      "environment variables",
     );
     expect(
       makeTarget("codex", "/work", {}, { OPENAI_IDENTITY_TOKEN_FILE: "/token" }).problem,
-    ).toContain("环境变量");
+    ).toContain("environment variables");
   });
   it("rejects launch wrappers with opaque arguments", () =>
     expect(
       makeTarget("codex", "/work", { command: ["ssh", "host", "codex"] }, {}).problem,
-    ).toContain("自定义"));
+    ).toContain("custom"));
   it("resolves custom provider families", () => {
     expect(providerOf("work", { work: { extends: "claude" } })).toBe("claude");
     expect(providerOf("acp", {})).toBeUndefined();

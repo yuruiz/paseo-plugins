@@ -89,10 +89,10 @@ describe("inline login card", () => {
     expect(state.open).not.toHaveBeenCalled();
     const button = tree!.root
       .findAllByType("Pressable" as any)
-      .find((n) => n.props.accessibilityLabel === "打开授权页面")!;
+      .find((n) => n.props.accessibilityLabel === "Open authorization page")!;
     await act(async () => button.props.onPress());
     expect(state.open).toHaveBeenCalledWith(state.view.url);
-    expect(buttons()).toContain("取消登录");
+    expect(buttons()).toContain("Cancel sign-in");
   });
   it("shows a secure code field only when the CLI requests it and clears on submit", async () => {
     await mount({ phase: "waiting", sessionId: "session", expectsCode: true });
@@ -112,16 +112,16 @@ describe("inline login card", () => {
   });
   it("separates login, reload and continue without automatic requests", async () => {
     await mount({ phase: "succeeded", status: "authenticated", sessionId: "session" });
-    expect(buttons()).toContain("重新加载当前会话");
-    expect(buttons()).not.toContain("继续任务");
+    expect(buttons()).toContain("Reload current session");
+    expect(buttons()).not.toContain("Continue task");
     expect(state.rpc).not.toHaveBeenCalled();
     state.view = { ...state.view, reloaded: true };
     await act(async () => tree!.update(<AuthPanel {...props} />));
-    expect(buttons()).toContain("继续任务");
-    expect(buttons()).not.toContain("重新加载当前会话");
+    expect(buttons()).toContain("Continue task");
+    expect(buttons()).not.toContain("Reload current session");
     state.view = { ...state.view, continued: true };
     await act(async () => tree!.update(<AuthPanel {...props} />));
-    expect(buttons()).not.toContain("继续任务");
+    expect(buttons()).not.toContain("Continue task");
   });
   it("keeps the credential target visible in compact layouts", async () => {
     await mount({ phase: "waiting" });

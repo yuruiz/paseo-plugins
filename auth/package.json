@@ -1,6 +1,6 @@
 {
   "name": "paseo-auth",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Reauthenticate Claude Code and Codex directly from Paseo conversations",
   "homepage": "https://github.com/yuruiz/paseo-plugins/tree/main/auth#readme",
