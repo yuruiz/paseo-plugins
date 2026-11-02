@@ -1,0 +1,32 @@
+{
+  "name": "beautiful-chat",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Beautiful Chat with all tool call details collapsed by default",
+  "homepage": "https://github.com/yuruiz/paseo-plugins/tree/main/beautiful-chat#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yuruiz/paseo-plugins.git",
+    "directory": "beautiful-chat"
+  },
+  "license": "MIT",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@shikijs/core": "^4.0.2",
+    "@shikijs/engine-javascript": "^4.0.2",
+    "@shikijs/langs": "^4.0.2",
+    "@shikijs/themes": "^4.0.2"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.8.0",
+    "@tanstack/react-query": "^5.90.11",
+    "@types/node": "^22.15.3",
+    "@types/react": "~19.2.0",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "typescript": "^5.9.3",
+    "zod": "^4.4.3"
+  }
+}

@@ -13,6 +13,7 @@ Plugins for [Paseo](https://paseo.sh). Each plugin lives in its own top-level di
 
 | [Skills](skills/) | Search, preview and invoke skills backed by a SKILL.md file. | `skills` |
 | [MCP Pills](mcp-pills/) | Browse agent-scoped MCP configuration, tools, resources and prompts. | `mcp-pills` |
+| [Beautiful Chat](beautiful-chat/) | Styled chat cards with every tool call collapsed by default. | `beautiful-chat` |
 
 ## Install
 
@@ -27,6 +28,7 @@ paseo plugin add git:yuruiz/paseo-plugins:vscode
 paseo plugin add git:yuruiz/paseo-plugins:shell-yeah
 paseo plugin add git:yuruiz/paseo-plugins:skills
 paseo plugin add git:yuruiz/paseo-plugins:mcp-pills
+paseo plugin add git:yuruiz/paseo-plugins:beautiful-chat
 ```
 
 Each plugin's README describes its host version, setup, data access and platform requirements. Plugins are trusted, unsandboxed code. Existing registry installations keep their previously approved source until the registry approves a migration; the commands above install directly from this repository.
