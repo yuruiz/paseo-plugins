@@ -14,6 +14,7 @@ interface Session {
 }
 export class AuthSessions {
   private sessions = new Map<string, Session>();
+  private reports = new Map<string, NonNullable<AuthView["lastCheck"]>>();
   private checks = new Map<string, Promise<AuthView>>();
   private processes = new Set<LoginProcess>();
   private disposed = false;
@@ -39,9 +40,25 @@ export class AuthSessions {
       return proc;
     };
   }
+  private reportKey(target: Target): string {
+    return JSON.stringify([target.key, target.problem, target.missing]);
+  }
+  private report(
+    target: Target,
+    kind: "checked" | "skipped",
+    view: AuthView,
+    message = view.message,
+  ) {
+    const key = this.reportKey(target);
+    this.reports.delete(key);
+    this.reports.set(key, { at: Date.now(), kind, status: view.status, message });
+    if (this.reports.size > 64) this.reports.delete(this.reports.keys().next().value!);
+  }
   state(target: Target): AuthView {
+    const lastCheck = this.reports.get(this.reportKey(target));
     if (target.problem)
       return {
+        lastCheck,
         provider: target.provider,
         phase: "idle",
         status: target.missing ? "missing" : "unsupported",
@@ -52,9 +69,10 @@ export class AuthSessions {
     const entry = this.sessions.get(target.key);
     if (entry) {
       entry.touched = Date.now();
-      return { ...entry.view };
+      return { ...entry.view, lastCheck };
     }
     return {
+      lastCheck,
       provider: target.provider,
       phase: "idle",
       status: "unchecked",
@@ -76,7 +94,16 @@ export class AuthSessions {
   }
   async check(target: Target): Promise<AuthView> {
     if (this.disposed) throw new Error("插件正在停止。");
-    if (target.problem || active(this.state(target))) return this.state(target);
+    const currentView = this.state(target);
+    if (target.problem || active(currentView)) {
+      this.report(
+        target,
+        "skipped",
+        currentView,
+        target.problem ?? "登录正在进行，请完成授权后再检查。",
+      );
+      return this.state(target);
+    }
     const pending = this.checks.get(target.key);
     if (pending) return pending;
     if (this.checks.size >= 4) throw new Error("正在检查多个账号，请稍后再试。");
@@ -90,7 +117,8 @@ export class AuthSessions {
         if (view.phase === "succeeded" && result.status !== "authenticated") view.phase = "failed";
         this.prune();
         this.sessions.set(target.key, { view, buffer: "", touched: Date.now(), submitted: false });
-        return { ...view };
+        this.report(target, "checked", view);
+        return this.state(target);
       })
       .finally(() => this.checks.delete(target.key));
     this.checks.set(target.key, work);
@@ -152,6 +180,7 @@ export class AuthSessions {
     if ([...this.sessions.values()].filter((s) => active(s.view)).length >= 4)
       throw new Error("正在进行的登录过多，请完成或取消后再试。");
     this.prune();
+    this.reports.delete(this.reportKey(target));
     const entry: Session = {
       view: {
         provider: target.provider,
@@ -285,6 +314,7 @@ export class AuthSessions {
     for (const proc of this.processes) proc.stop();
     await Promise.allSettled(this.checks.values());
     this.sessions.clear();
+    this.reports.clear();
     this.processes.clear();
   }
 }

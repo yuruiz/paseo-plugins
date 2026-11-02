@@ -25,7 +25,11 @@ vi.mock("@getpaseo/plugin/client", () => ({
 vi.mock("@getpaseo/plugin/client/ui", () => ({ copyText: state.copy }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: state.view, isError: false }),
-  useQueryClient: () => ({ setQueryData: vi.fn(), invalidateQueries: state.invalid }),
+  useQueryClient: () => ({
+    setQueryData: vi.fn(),
+    invalidateQueries: state.invalid,
+    cancelQueries: vi.fn().mockResolvedValue(undefined),
+  }),
   useMutation: (options: any) => {
     state.mutation = options;
     return {

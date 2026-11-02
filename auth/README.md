@@ -22,6 +22,7 @@ Install on the daemon that runs your agents. The sidebar screen's host picker se
 - A recognized provider authentication failure adds one **Auth card** to the current conversation. Repeated errors update the same row.
 - Type `/auth`, or choose **在当前对话登录** in Command Center, to show the card manually.
 - **账号登录** in the sidebar and **管理 Claude / Codex 登录** in Command Center provide host-level manual login.
+- **检查状态** shows progress and keeps a timestamped result, including an explicit explanation when CLI inspection is skipped by unsupported configuration. Repeated checks still report completion when the account status is unchanged.
 - Click **重新登录**. For Codex, copy the device code and enter it on the authorization website. For Claude, open the website and paste its authorization code into the card if prompted.
 - The card updates when the CLI exits successfully and its status command confirms saved credentials. Switching pages does not stop login; **取消登录** does. Sessions expire after ten minutes.
 - After login, click **重新加载当前会话**, then **继续任务** if desired. Reload restarts only that provider session and preserves conversation history. Running turns and pending permission requests block recovery. Continue sends a new instruction to inspect completed work and resume; it does not blindly replay the previous prompt.

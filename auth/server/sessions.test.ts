@@ -151,3 +151,63 @@ describe("login lifecycle", () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe("status check feedback", () => {
+  it("records why a check was skipped and preserves it across state reads", async () => {
+    const { sessions, calls } = fixture();
+    const blocked = { ...target, problem: "配置使用 OPENAI_API_KEY，无法执行此检查。" };
+    expect(sessions.state(blocked).lastCheck).toBeUndefined();
+    const result = await sessions.check(blocked);
+    expect(result.lastCheck).toEqual({
+      at: expect.any(Number),
+      kind: "skipped",
+      status: "unsupported",
+      message: blocked.problem,
+    });
+    expect(sessions.state(blocked).lastCheck).toEqual(result.lastCheck);
+    expect(sessions.state(target).lastCheck).toBeUndefined();
+    expect(calls).toHaveLength(0);
+  });
+  it("reports missing executables without suggesting that credentials were inspected", async () => {
+    const { sessions, calls } = fixture();
+    expect(
+      (await sessions.check({ ...target, missing: true, problem: "CLI 未安装" })).lastCheck,
+    ).toMatchObject({ kind: "skipped", status: "missing" });
+    expect(calls).toHaveLength(0);
+  });
+  it("records each completed check even when the authentication result is unchanged", async () => {
+    vi.useFakeTimers();
+    const { sessions, calls } = fixture();
+    vi.setSystemTime(10000);
+    const first = sessions.check(target);
+    calls[0].events.data('{"loggedIn":true}');
+    calls[0].events.exit(0);
+    expect((await first).lastCheck).toMatchObject({
+      at: 10000,
+      kind: "checked",
+      status: "authenticated",
+    });
+    vi.setSystemTime(20000);
+    const second = sessions.check(target);
+    calls[1].events.data('{"loggedIn":true}');
+    calls[1].events.exit(0);
+    expect((await second).lastCheck).toMatchObject({
+      at: 20000,
+      kind: "checked",
+      status: "authenticated",
+    });
+    expect(sessions.state(target).lastCheck?.at).toBe(20000);
+    sessions.start(target);
+    expect(sessions.state(target).lastCheck).toBeUndefined();
+  });
+  it("records failed CLI checks instead of dropping their feedback", async () => {
+    const { sessions, calls } = fixture();
+    const checking = sessions.check(target);
+    calls[0].events.error();
+    expect((await checking).lastCheck).toMatchObject({
+      kind: "checked",
+      status: "error",
+      message: expect.stringContaining("无法检查"),
+    });
+  });
+});

@@ -15,7 +15,21 @@ export const phase = z.enum([
   "canceled",
   "expired",
 ]);
+export const checkResult = z.object({
+  at: z.number(),
+  kind: z.enum(["checked", "skipped"]),
+  status: z.enum([
+    "unchecked",
+    "authenticated",
+    "unauthenticated",
+    "missing",
+    "unsupported",
+    "error",
+  ]),
+  message: z.string(),
+});
 export const authView = z.object({
+  lastCheck: checkResult.optional(),
   provider,
   phase,
   sessionId: z.string().optional(),

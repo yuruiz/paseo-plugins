@@ -82,9 +82,14 @@ export function makeTarget(
           "OPENAI_IDENTITY_TOKEN_FILE",
           "OPENAI_IDENTITY_PROVIDER_ID",
         ];
-  if (managedKeys.some((k) => env[k] && env[k] !== "0" && env[k] !== "false"))
-    problem =
-      "此 provider 使用环境变量或外部服务认证，请在对应配置中更新凭据。网页登录不会替换该配置。";
+  const managed = managedKeys.filter((key) => env[key] && env[key] !== "0" && env[key] !== "false");
+  if (managed.length) {
+    const reason =
+      "检测到认证环境变量 " +
+      managed.join("、") +
+      "。请在对应 provider 配置中更新凭据；网页登录不会替换该配置。";
+    problem = problem ? problem + " " + reason : reason;
+  }
   if (
     provider === "claude" &&
     env.ANTHROPIC_BASE_URL &&
