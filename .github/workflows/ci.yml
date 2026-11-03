@@ -33,4 +33,3 @@ jobs:
       - run: npm run format:check
         if: matrix.plugin != 'beautiful-chat'
       - run: npm test
-        if: matrix.plugin != 'beautiful-chat'

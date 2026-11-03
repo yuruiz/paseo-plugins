@@ -299,8 +299,9 @@ npm run check -- beautiful-chat
 paseo plugin reload beautiful-chat
 ```
 
-Run these commands from the repository root. This imported plugin currently provides TypeScript
-checking; it has no lint, formatting or test scripts. Local caches and temporary files must follow
+Run these commands from the repository root. Run `npm test -- beautiful-chat client/web.test.ts`
+for the selection-to-composer regression tests. This plugin has no lint or formatting scripts.
+Local caches and temporary files must follow
 the repository's [development storage requirements](../CONTRIBUTING.md#disk-space-on-this-development-machine).
 
 Rebuild the screenshots after a visual change:

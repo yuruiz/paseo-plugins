@@ -4,6 +4,7 @@ import type { TextProps, ViewProps } from "react-native";
 import { copyText } from "@getpaseo/plugin/client/react-native";
 import { radius } from "./theme-tokens";
 import type { ExtendedThemeTokens } from "./theme-tokens";
+import { insertIntoSelectionComposer } from "../web";
 
 /**
  * A floating Copy / Add to chat bar for highlighted callout text.
@@ -45,13 +46,12 @@ export const selectionCodeText = { dataSet: { bccode: true } } as unknown as Tex
 
 const SURFACE_SELECTOR = "[data-bcselection]";
 const CODE_SELECTOR = "[data-bccode]";
-/** The host composer input carries `dataSet={{ composerInput: "" }}`. */
-const COMPOSER_SELECTOR = "[data-composer-input]";
 
 const GAP = 8;
 const RESET_LABEL_MS = 1400;
 
 interface Snapshot {
+  surface: Element;
   text: string;
   isCode: boolean;
   rect: DOMRect;
@@ -84,7 +84,7 @@ function readSelection(): Snapshot | null {
   if (!rect || (rect.width === 0 && rect.height === 0)) return null;
 
   const isCode = Boolean(elementOf(range.commonAncestorContainer)?.closest(CODE_SELECTOR));
-  return { text, isCode, rect };
+  return { surface: anchor, text, isCode, rect };
 }
 
 /** Markdown the composer can carry: a fence for code, a blockquote for prose. */
@@ -96,60 +96,6 @@ function quote(snapshot: Snapshot): string {
       .map((line) => (line.trim() ? "> " + line : ">"))
       .join("\n") + "\n\n"
   );
-}
-
-function composerInput(): HTMLTextAreaElement | HTMLInputElement | null {
-  const marked = document.querySelector(COMPOSER_SELECTOR);
-  if (!marked) return null;
-  if (marked instanceof HTMLTextAreaElement || marked instanceof HTMLInputElement) return marked;
-  return marked.querySelector("textarea, input");
-}
-
-/**
- * Writes the snippet into the composer at the caret and reports whether it
- * landed.
- *
- * `insertText` is the first choice because it goes through the browser's own
- * editing path: the composer is an uncontrolled input that publishes its value
- * through React's change handler, and a real edit is what that handler listens
- * for. Assigning `.value` moves the pixels only, so the draft the host would
- * send stays behind — hence the native setter plus a bubbling `input` event as
- * the fallback, and a value check before either path claims success.
- */
-function insertIntoComposer(snippet: string): boolean {
-  const input = composerInput();
-  if (!input) return false;
-
-  const before = input.value;
-  const start = input.selectionStart ?? before.length;
-  const end = input.selectionEnd ?? start;
-  const head = before.slice(0, start);
-  // A quote needs a blank line above it or the previous paragraph absorbs it.
-  const lead =
-    head.length === 0 || head.endsWith("\n\n") ? "" : head.endsWith("\n") ? "\n" : "\n\n";
-  const insert = lead + snippet;
-  const next = head + insert + before.slice(end);
-  const caret = head.length + insert.length;
-
-  input.focus();
-  input.setSelectionRange(start, end);
-  if (document.execCommand("insertText", false, insert) && input.value === next) {
-    input.setSelectionRange(caret, caret);
-    return true;
-  }
-
-  const prototype =
-    input instanceof HTMLTextAreaElement
-      ? HTMLTextAreaElement.prototype
-      : HTMLInputElement.prototype;
-  const setValue = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
-  if (!setValue) return false;
-
-  setValue.call(input, next);
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  if (input.value !== next) return false;
-  input.setSelectionRange(caret, caret);
-  return true;
 }
 
 const BAR_CSS = `
@@ -260,7 +206,7 @@ function createBar(): Bar {
   const addButton = makeButton("Add to chat", (button) => {
     const snapshot = readSelection();
     if (!snapshot) return;
-    if (insertIntoComposer(quote(snapshot))) {
+    if (insertIntoSelectionComposer(snapshot.surface, quote(snapshot))) {
       flash(button, "Added");
       return;
     }
