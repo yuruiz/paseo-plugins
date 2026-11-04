@@ -12,14 +12,23 @@ interface ReportedCommand {
 export interface CommandAgent {
   cwd: string;
   provider: string;
+  discoveryProvider?: string;
+  roots?: CommandRoots;
   busy: boolean;
   archived: boolean;
   commands(): Promise<{ commands: ReportedCommand[]; error?: string | null }>;
   send(text: string): Promise<void>;
 }
 
-export async function commandCatalog(agent: CommandAgent, roots: CommandRoots = defaultRoots()) {
-  const discovered = await discoverCommands({ cwd: agent.cwd, provider: agent.provider, roots });
+export async function commandCatalog(
+  agent: CommandAgent,
+  roots: CommandRoots = agent.roots ?? defaultRoots(),
+) {
+  const discovered = await discoverCommands({
+    cwd: agent.cwd,
+    provider: agent.discoveryProvider ?? agent.provider,
+    roots,
+  });
   let reported: ReportedCommand[] = [];
   try {
     const response = await agent.commands();
@@ -66,9 +75,13 @@ export async function commandCatalog(agent: CommandAgent, roots: CommandRoots = 
 export async function commandBody(
   agent: CommandAgent,
   commandId: string,
-  roots: CommandRoots = defaultRoots(),
+  roots: CommandRoots = agent.roots ?? defaultRoots(),
 ): Promise<string> {
-  const { files } = await discoverCommands({ cwd: agent.cwd, provider: agent.provider, roots });
+  const { files } = await discoverCommands({
+    cwd: agent.cwd,
+    provider: agent.discoveryProvider ?? agent.provider,
+    roots,
+  });
   const file = files.find((entry) => entry.id === commandId);
   if (!file) throw new Error("Command file is no longer available. Refresh the list.");
   return file.body;
@@ -83,7 +96,7 @@ interface InvokeInput {
 export async function sendCommand(
   agent: CommandAgent,
   input: InvokeInput,
-  roots: CommandRoots = defaultRoots(),
+  roots: CommandRoots = agent.roots ?? defaultRoots(),
 ) {
   if (agent.archived) throw new Error("This agent is archived.");
   if (agent.busy)

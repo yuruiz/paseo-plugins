@@ -1,9 +1,12 @@
 import { mkdtemp, mkdir, writeFile, rm, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { loadAgent } from "../index.server";
 import { commandBody, commandCatalog, sendCommand, type CommandAgent } from "./commands";
-import { discoverCommands, parseCommand, type CommandRoots } from "./discovery";
+import { discoverCommands, parseCommand, defaultRoots, type CommandRoots } from "./discovery";
+import { resolveProvider } from "./provider";
 import { invocationText } from "./invocation";
 
 describe("Commands", () => {
@@ -43,6 +46,119 @@ describe("Commands", () => {
   });
   afterEach(async () => {
     await rm(directory, { recursive: true, force: true });
+  });
+
+  it.each(["claudex", "work-claude"])(
+    "discovers, previews and invokes Claude commands for the %s provider alias",
+    async (provider) => {
+      const commandId = await file("repo/.claude/commands/review.md", "Review $ARGUMENTS");
+      await file("home/.claude/commands/global.md", "Global command");
+      await file("repo/.codex/prompts/hidden.md", "Codex only");
+      const context = {
+        paseo: {
+          agents: {
+            ref: () => ({
+              refresh: async () => ({ agent: { ...agent, provider, status: "idle" } }),
+              commands: async () => ({ commands: [{ name: "review", description: "Review" }] }),
+              send: agent.send,
+            }),
+          },
+          config: {
+            get: async () => ({
+              config: {
+                providers: {
+                  claude: { env: { HOME: roots.home, CLAUDE_CONFIG_DIR: roots.claude } },
+                  [provider]: { extends: "claude" },
+                },
+              },
+            }),
+          },
+        },
+      } as unknown as PluginHandlerContext;
+      const resolved = await loadAgent("agent-1", context);
+      const catalog = await commandCatalog(resolved);
+      expect(catalog.provider).toBe(provider);
+      expect(catalog.commands.map(({ name, mode }) => ({ name, mode }))).toEqual([
+        { name: "review", mode: "native" },
+        { name: "global", mode: "template" },
+      ]);
+      expect(await commandBody(resolved, commandId)).toBe("Review $ARGUMENTS");
+      await sendCommand(resolved, { commandId, args: "src", mode: "native" });
+      expect(sent).toEqual(["/review src"]);
+    },
+  );
+
+  it("uses a Codex alias's environment overrides for listing, preview and template invocation", async () => {
+    const commandId = await file("custom-codex/commands/check.md", "Check $ARGUMENTS");
+    await file("home/.codex/commands/hidden.md", "Wrong home");
+    const context = {
+      paseo: {
+        agents: {
+          ref: () => ({
+            refresh: async () => ({ agent: { ...agent, provider: "work-codex", status: "idle" } }),
+            commands: agent.commands,
+            send: agent.send,
+          }),
+        },
+        config: {
+          get: async () => ({
+            config: {
+              providers: {
+                codex: { env: { CODEX_HOME: roots.codex } },
+                "work-codex": {
+                  extends: "codex",
+                  env: { HOME: roots.home, CODEX_HOME: path.join(directory, "custom-codex") },
+                },
+              },
+            },
+          }),
+        },
+      },
+    } as unknown as PluginHandlerContext;
+    const resolved = await loadAgent("agent-1", context);
+    const catalog = await commandCatalog(resolved);
+    expect(catalog.provider).toBe("work-codex");
+    expect(catalog.commands.map(({ name }) => name)).toEqual(["check"]);
+    expect(await commandBody(resolved, commandId)).toBe("Check $ARGUMENTS");
+    await sendCommand(resolved, { commandId, args: "tests", mode: "template" });
+    expect(sent).toEqual(["Run the following command template (check):\n\nCheck tests"]);
+  });
+
+  it("keeps unknown providers on shared directories instead of guessing from their names", async () => {
+    await file("repo/.agents/commands/shared.md", "Shared");
+    await file("repo/.claude/commands/hidden.md", "Claude only");
+    agent.provider = "claude-unknown";
+    agent.discoveryProvider = resolveProvider(agent.provider, {}).provider;
+    const catalog = await commandCatalog(agent, roots);
+    expect(catalog.commands.map(({ name }) => name)).toEqual(["shared"]);
+  });
+
+  it("resolves inherited environment values with the most specific provider taking precedence", () => {
+    const resolved = resolveProvider(
+      "work",
+      {
+        work: { extends: "team", env: { CLAUDE_CONFIG_DIR: "/work", INVALID: false } },
+        team: { extends: "claude", env: { HOME: "/team", CLAUDE_CONFIG_DIR: "/team-claude" } },
+        claude: { env: { HOME: "/base", XDG_CONFIG_HOME: "/config" } },
+      },
+      { HOME: "/daemon", CLAUDE_CONFIG_DIR: "/daemon-claude", KEEP: "yes" },
+    );
+    expect(resolved).toEqual({
+      provider: "claude",
+      env: { HOME: "/team", CLAUDE_CONFIG_DIR: "/work", XDG_CONFIG_HOME: "/config", KEEP: "yes" },
+    });
+    expect(defaultRoots(resolved.env)).toMatchObject({
+      home: "/team",
+      claude: "/work",
+      codex: "/team/.codex",
+      opencode: "/config/opencode",
+    });
+  });
+
+  it("rejects circular provider inheritance", () => {
+    expect(() => resolveProvider("a", { a: { extends: "b" }, b: { extends: "a" } })).toThrow(
+      "Circular provider inheritance",
+    );
   });
 
   it("lists ancestor project and global templates with metadata without leaking other providers", async () => {

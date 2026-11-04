@@ -18,14 +18,20 @@ filesystem result; there is no reported-entry fallback or command-name denylist.
 
 ## Search paths and precedence
 
-- Claude: `.claude/skills` from cwd through the repository root, then the Claude home skills,
-  then installed plugin skills. Plugin entries with `projectPath` apply only inside that project,
+- Claude: `.claude/skills` from cwd through the repository root, then `$CLAUDE_CONFIG_DIR/skills`
+  (default `~/.claude/skills`), then installed plugin skills. Plugin entries with `projectPath` apply only inside that project,
   regardless of their `scope` string. Read `plugins/installed_plugins.json`, not all cached versions.
 - Codex: `.agents/skills` then `.codex/skills` at each directory from cwd through the repository
   root; `~/.agents/skills`, `$CODEX_HOME/skills` (default `~/.codex/skills`), then `/etc/codex/skills`.
   The legacy `.codex` directories remain lower priority within each scope.
 - Hermes: `$HERMES_HOME/skills` (default `~/.hermes/skills`), including flat skills and one category
   level. Excluded environment/archive directories and `_org` mirrors are skipped at both levels.
+
+Custom provider IDs use their configured `extends` provider for discovery while retaining their
+own identity in the UI. ACP is a transport, so `hermes` configured with `extends: "acp"` still uses
+Hermes discovery. Root directories merge the plugin process environment, base-provider `env`,
+then custom-provider `env`, including `HOME` (`USERPROFILE` on Windows). Both listing and reading
+resolve the current configuration.
 
 Outside a repository the project walk uses cwd only. Search paths retain upstream first-name-wins
 precedence. Unsupported providers return `scanned: false` and the UI explains the discovery limit.
@@ -50,8 +56,8 @@ lifetime guard so a completed send cannot close a later popover or lose an unsee
   upstream search paths rather than scanning arbitrary caches for anything named `SKILL.md`.
 - Same-name skills are deduplicated although Codex can expose several copies.
 - Hermes project trust, external directories, organization mirrors, and nesting beyond one category
-  are not resolved. Profile-specific roots are not inferred from an agent's launch configuration.
-- Environment overrides come from the plugin subprocess, not each agent's provider configuration.
+  are not resolved.
+- Environment changes made inside provider launcher scripts cannot be inferred.
 
 The historical `plan.md` and `execution-ledger.md` describe upstream decisions. This document
 supersedes their additive session-command discovery design.

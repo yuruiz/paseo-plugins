@@ -29,8 +29,9 @@ and invoke it with optional arguments. **Open tab** shows the full body and a co
 The Command Center's **Skills** action opens the same panel. Model-only skills remain readable
 but do not have an Invoke button.
 
-Discovery supports Claude, Codex and Hermes. Project, repository, personal, admin and installed
-Claude plugin sources retain upstream precedence and name deduplication. Bodies load on demand.
+Discovery supports Claude, Codex and Hermes, plus custom providers that extend them. Provider
+`env` overrides select their configuration directories. Project, repository, personal, admin and
+installed Claude plugin sources retain upstream precedence and name deduplication. Bodies load on demand.
 Ordinary Markdown, `AGENTS.md`, `README.md`, legacy command files and folders without a valid
 `SKILL.md` do not become menu items.
 

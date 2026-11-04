@@ -27,6 +27,7 @@ type CommandsFn = () => Promise<{
 function contextFor(
   agent: { id: string; provider: string; cwd: string } | null,
   commands?: CommandsFn,
+  providers: Record<string, unknown> = {},
 ) {
   const handle = {
     refresh: async () => (agent ? { agent, project: null } : null),
@@ -34,7 +35,12 @@ function contextFor(
     // Commands are available on the host but must never feed the Skills menu.
     ...(commands ? { commands } : {}),
   };
-  return { paseo: { agents: { ref: () => handle } } } as unknown as PluginHandlerContext;
+  return {
+    paseo: {
+      agents: { ref: () => handle },
+      config: { get: async () => ({ config: { providers } }) },
+    },
+  } as unknown as PluginHandlerContext;
 }
 
 function reports(
@@ -81,6 +87,113 @@ afterEach(async () => {
 });
 
 describe("createListSkillsHandler", () => {
+  test.each(["claudex", "work-claude"])(
+    "lists and reads Claude skills for the %s provider alias",
+    async (provider) => {
+      const cwd = path.join(root, "work");
+      await writeSkill(path.join(cwd, ".claude", "skills"), "project", "Project skill");
+      await writeSkill(path.join(roots.claudeHome, "skills"), "global", "Global skill");
+      await writeSkill(path.join(cwd, ".agents", "skills"), "hidden", "Codex only");
+      const commands = vi.fn(reports({ name: "not-a-file", kind: "skill" }));
+      const context = contextFor({ id: "agent-1", provider, cwd }, commands, {
+        [provider]: { extends: "claude" },
+      });
+      const result = await createListSkillsHandler(roots)({ agentId: "agent-1" }, context);
+      expect(result.provider).toBe(provider);
+      expect(result.scanned).toBe(true);
+      expect(result.skills.map((skill) => skill.name)).toEqual(["global", "project"]);
+      for (const skill of result.skills) {
+        const read = await createReadSkillHandler(roots)(
+          { agentId: "agent-1", skillId: skill.id },
+          context,
+        );
+        expect(read.body).toBe(`Body for ${skill.name}.\n`);
+      }
+      expect(commands).not.toHaveBeenCalled();
+    },
+  );
+
+  test("uses inherited Claude configuration and re-resolves overrides when reading", async () => {
+    const cwd = path.join(root, "work");
+    await mkdir(cwd);
+    const home = path.join(root, "home");
+    const original = path.join(root, "base-claude");
+    const custom = path.join(root, "custom-claude");
+    await writeSkill(path.join(original, "skills"), "base", "Base skill");
+    await writeSkill(path.join(custom, "skills"), "custom", "Custom skill");
+    const providers = {
+      claude: { env: { HOME: home, CLAUDE_CONFIG_DIR: original } },
+      claudex: { extends: "claude", env: {} as Record<string, string> },
+    };
+    const context = contextFor({ id: "agent-1", provider: "claudex", cwd }, undefined, providers);
+    const list = createListSkillsHandler();
+    const inherited = await list({ agentId: "agent-1" }, context);
+    expect(inherited.skills.map((skill) => skill.name)).toEqual(["base"]);
+    providers.claudex.env.CLAUDE_CONFIG_DIR = custom;
+    const overridden = await list({ agentId: "agent-1" }, context);
+    expect(overridden.skills.map((skill) => skill.name)).toEqual(["custom"]);
+    const read = createReadSkillHandler();
+    expect(
+      await read({ agentId: "agent-1", skillId: overridden.skills[0]!.id }, context),
+    ).toMatchObject({ name: "custom", body: "Body for custom.\n" });
+    await expect(
+      read({ agentId: "agent-1", skillId: inherited.skills[0]!.id }, context),
+    ).rejects.toThrow("Skill not available");
+  });
+
+  test("uses Codex alias roots without leaking the base provider's skills", async () => {
+    const cwd = path.join(root, "work");
+    await mkdir(cwd);
+    const home = path.join(root, "home");
+    const custom = path.join(root, "custom-codex");
+    await writeSkill(path.join(roots.codexHome, "skills"), "hidden", "Base provider only");
+    await writeSkill(path.join(home, ".agents", "skills"), "shared", "Shared skill");
+    await writeSkill(path.join(custom, "skills"), "custom", "Custom skill");
+    const context = contextFor({ id: "agent-1", provider: "work-codex", cwd }, undefined, {
+      codex: { env: { HOME: home, CODEX_HOME: roots.codexHome } },
+      "work-codex": { extends: "codex", env: { CODEX_HOME: custom } },
+    });
+    const result = await createListSkillsHandler()({ agentId: "agent-1" }, context);
+    expect(result.provider).toBe("work-codex");
+    expect(result.scanned).toBe(true);
+    expect(result.skills.map((skill) => skill.name)).toEqual(["custom", "shared"]);
+  });
+
+  test("retains Hermes discovery when its configured transport is ACP", async () => {
+    await writeSkill(path.join(roots.hermesHome, "skills"), "paseo", "Paseo reference");
+    const result = await createListSkillsHandler(roots)(
+      { agentId: "agent-1" },
+      contextFor({ id: "agent-1", provider: "hermes", cwd: root }, undefined, {
+        hermes: { extends: "acp" },
+      }),
+    );
+    expect(result.scanned).toBe(true);
+    expect(result.skills.map((skill) => skill.name)).toEqual(["paseo"]);
+  });
+
+  test("does not guess a discovery provider for an unrelated ACP agent", async () => {
+    const result = await createListSkillsHandler(roots)(
+      { agentId: "agent-1" },
+      contextFor({ id: "agent-1", provider: "claude-unknown", cwd: root }, undefined, {
+        "claude-unknown": { extends: "acp" },
+      }),
+    );
+    expect(result.scanned).toBe(false);
+    expect(result.skills).toEqual([]);
+  });
+
+  test("rejects circular provider configuration instead of returning an empty list", async () => {
+    await expect(
+      createListSkillsHandler(roots)(
+        { agentId: "agent-1" },
+        contextFor({ id: "agent-1", provider: "a", cwd: root }, undefined, {
+          a: { extends: "b" },
+          b: { extends: "a" },
+        }),
+      ),
+    ).rejects.toThrow("Circular provider inheritance");
+  });
+
   test("lists claude skills for a claude agent", async () => {
     const cwd = path.join(root, "work");
     await writeSkill(path.join(cwd, ".claude", "skills"), "catchup", "Summarizes changes");
@@ -238,7 +351,15 @@ describe("defaultSkillRoots", () => {
     expect(roots.hermesHome).toBe("/custom/hermes");
   });
 
-  test("falls back to ~/.codex and always uses ~/.claude and ~/.agents", () => {
+  test("honors CLAUDE_CONFIG_DIR and HOME", () => {
+    const roots = defaultSkillRoots({ HOME: "/custom/home", CLAUDE_CONFIG_DIR: "/custom/claude" });
+    expect(roots.claudeHome).toBe("/custom/claude");
+    expect(roots.codexHome).toBe("/custom/home/.codex");
+    expect(roots.agentsHome).toBe("/custom/home/.agents");
+    expect(roots.hermesHome).toBe("/custom/home/.hermes");
+  });
+
+  test("falls back to the default provider homes", () => {
     const roots = defaultSkillRoots({} as NodeJS.ProcessEnv);
     expect(roots.codexHome).toBe(path.join(os.homedir(), ".codex"));
     expect(roots.claudeHome).toBe(path.join(os.homedir(), ".claude"));
