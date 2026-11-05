@@ -277,14 +277,17 @@ function PrivateFileInput({
   const styles = useQuestionStyles(theme);
   const [imageError, setImageError] = useState(false);
   const [reading, setReading] = useState(false);
+  const [selectionVersion, setSelectionVersion] = useState(0);
   const choose = useCallback(() => {
     setImageError(false);
     setReading(true);
     void (field.kind === "file" ? pickSecretFile(field.format ?? "any") : pickImage())
       .then((image) => {
         if (image) {
-          if ("format" in image) form.setFile(field.id, image);
-          else form.setImage(field.id, image);
+          if ("format" in image) {
+            form.setFile(field.id, image);
+            setSelectionVersion((version) => version + 1);
+          } else form.setImage(field.id, image);
         }
         return undefined;
       })
@@ -332,11 +335,11 @@ function PrivateFileInput({
       />
       {field.kind === "file" ? (
         <TextInput
-          key={field.id}
+          key={`${field.id}-${selectionVersion}`}
           accessibilityLabel="Paste credential file"
-          placeholder="Or paste file contents"
+          placeholder="Or paste file contents (visible here)"
           multiline
-          secureTextEntry
+          maxLength={MAX_FILE_BYTES}
           autoComplete="off"
           autoCorrect={false}
           autoCapitalize="none"
