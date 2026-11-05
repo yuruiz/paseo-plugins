@@ -6,24 +6,12 @@ import { unselectable } from "./selection";
 import { radius } from "./theme-tokens";
 import type { ExtendedThemeTokens } from "./theme-tokens";
 
-/**
- * The host's own reply footer — copy, fork and the turn's time — is drawn by
- * the stream layout, not by the message renderer: it walks up from the newest
- * item looking for a `assistant_message` stream item
- * (`agent-stream/layout.ts:102`). A transformed item is projected as
- * `kind: "plugin"` (`plugins/timeline/projection.ts:96`), so once this plugin
- * renders the reply the host finds no assistant and draws no footer.
- *
- * This is the part a plugin can rebuild. Fork is not: it needs the daemon
- * client and a timeline cursor (`hooks/use-fork-agent.ts`), and the plugin SDK
- * exposes neither. Turning "Assistant markdown" off in settings hands the reply
- * back to the host, which brings the full footer with it.
- */
 interface AssistantFooterProps {
   /** The reply, copied verbatim — the same text the host would copy. */
   text: string;
   at: Date;
   tokens: ExtendedThemeTokens;
+  forkAction?: React.ReactNode;
 }
 
 const COPIED_MS = 1600;
@@ -53,7 +41,7 @@ export function formatReplyTime(date: Date, now: Date = new Date()): string {
   return `${label} ${time}`;
 }
 
-export function AssistantFooter({ text, at, tokens }: AssistantFooterProps) {
+export function AssistantFooter({ text, at, tokens, forkAction }: AssistantFooterProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -124,6 +112,7 @@ export function AssistantFooter({ text, at, tokens }: AssistantFooterProps) {
         />
         <Text style={styles.copyLabel}>{copied ? "Copied" : "Copy"}</Text>
       </Pressable>
+      {forkAction}
       <Text style={styles.time}>{time}</Text>
     </View>
   );

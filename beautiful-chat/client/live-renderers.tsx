@@ -10,6 +10,7 @@ import { ReasoningTrace } from "./components/reasoning-trace";
 import { TaskList } from "./components/task-list";
 import { UserMessage } from "./components/user-message";
 import { RewindAction } from "./components/rewind-action";
+import { ForkAction } from "./components/fork-action";
 import { hostFontEscape } from "./components/host-font-escape";
 import { promptRowAnchor } from "./components/prompt-anchor";
 import { surfaceProps } from "./components/view-props";
@@ -740,6 +741,8 @@ export function LiveTodoRenderer({ item, theme }: PluginTimelineItemProps<LiveTo
 
 export interface LiveAssistantPayload {
   text: string;
+  messageId?: string;
+  phase?: string;
 }
 
 /**
@@ -751,6 +754,7 @@ export interface LiveAssistantPayload {
  */
 export function LiveAssistantRenderer({
   agentId,
+  host,
   item,
   theme,
   timestamp,
@@ -763,11 +767,9 @@ export function LiveAssistantRenderer({
   useSelectionActions(tokens, preferences.selectionActions);
   usePointerGlow(preferences.pointerGlow);
 
-  // Replacing the reply costs the host's footer, which the stream layout hangs
-  // off an `assistant_message` item that no longer exists. Rebuild it where the
-  // host puts it: under the newest message, once, not under every reply.
   const itemKey = `assistant:${timestamp.getTime()}`;
   const isTail = useIsTimelineTail(itemKey);
+  const canFork = Boolean(item.data.messageId) && item.data.phase === "complete";
 
   // Job results, IRC relays and reminders arrive as replies because the host
   // files any unclaimed `custom` message under this item kind. They are not
@@ -781,8 +783,10 @@ export function LiveAssistantRenderer({
       ) : (
         <MarkdownView text={item.data.text} tokens={tokens} variant={preferences.markdownVariant} />
       )}
-      {isTail && !envelope ? (
-        <AssistantFooter text={item.data.text} at={timestamp} tokens={tokens} />
+      {(isTail || canFork) && !envelope ? (
+        <AssistantFooter text={item.data.text} at={timestamp} tokens={tokens}
+          forkAction={canFork ? <ForkAction key={`${host.id}:${agentId}:${item.data.messageId}`} hostId={host.id} agentId={agentId}
+            messageId={item.data.messageId!} tokens={tokens} /> : undefined} />
       ) : null}
       <TimelineTailHub
         agentId={agentId}

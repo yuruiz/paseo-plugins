@@ -150,6 +150,20 @@ mobile, the prompt is copied for pasting instead.
 
 ![Prompt bubble](docs/images/user.png)
 
+### Native conversation fork
+
+Completed replies include **Fork** when Assistant markdown is enabled. The plugin uses the
+provider's native session fork, preserves the original conversation, and imports the new session
+into the same workspace. Model, mode, and thinking settings are copied. **Open fork** uses Paseo's
+app link; the new conversation is also available in the workspace.
+
+This adapter supports built-in Codex **0.165.0** and Claude Code **2.1.252**, using Claude Agent SDK
+**0.3.246**. Other versions, provider aliases, and custom launch commands require an adapter update.
+Wait for the source conversation to finish before forking. Codex forks through the selected
+completed turn's final reply; Claude forks through the selected message. Native history is retained
+without a text attachment or character limit. Files stay as they are in the shared workspace;
+Claude file-rewind checkpoints are not copied by its native fork API.
+
 ### Syntax block
 
 Shared by every card that shows code: language detection from the path, line numbers, diff tints,

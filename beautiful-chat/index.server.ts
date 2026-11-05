@@ -7,6 +7,8 @@ import { type HighlightLine, type HighlightToken, highlightRpc } from "./shared/
 import { imageRpc } from "./shared/image-rpc";
 import { rewindRpc } from "./shared/rewind-rpc";
 import { rewindAgent } from "./server/rewind";
+import { forkRpc } from "./shared/fork-rpc";
+import { forkAgent } from "./server/fork";
 
 /**
  * Image types worth inlining, and the mime each one needs in its data URI.
@@ -450,6 +452,7 @@ function tokenize(
 
 export default function contribute(server: PluginServerContext) {
   server.handle(rewindRpc, rewindAgent);
+  server.handle(forkRpc, forkAgent);
 
   server.handle(revealPathRpc, async (input) => {
     const requested = stripSelector(input.path);

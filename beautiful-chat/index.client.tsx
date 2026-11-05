@@ -196,7 +196,7 @@ export default function contribute(client: PluginClientContext) {
   const removeAssistantTransformer = client.addTimelineTransformer({
     id: "omp-enhanced-assistant",
     query: { itemType: "assistant_message" },
-    transform({ item }) {
+    transform({ item, phase }) {
       if (item.type !== "assistant_message") return undefined;
       if (!getEnhancerPreferences().assistantMarkdown) return undefined;
       if (!item.text.trim()) return undefined;
@@ -206,7 +206,7 @@ export default function contribute(client: PluginClientContext) {
             type: "plugin" as const,
             kind: "omp-assistant",
             version: 1,
-            data: { text: item.text },
+            data: { text: item.text, ...(item.messageId ? { messageId: item.messageId } : {}), phase },
           },
         ],
       };
@@ -216,7 +216,7 @@ export default function contribute(client: PluginClientContext) {
   const removeAssistantRenderer = client.addTimelineRenderer({
     kind: "omp-assistant",
     version: 1,
-    schema: z.object({ text: z.string() }),
+    schema: z.object({ text: z.string(), messageId: z.string().optional(), phase: z.string().optional() }),
     Component: LiveAssistantRenderer,
   });
 
