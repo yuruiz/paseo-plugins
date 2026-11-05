@@ -22,7 +22,7 @@ async function bounded<T>(call: Promise<T>, fallback: T): Promise<T> {
 
 export class SecretNotifications {
   private readonly entries = new Map<string, Notice>();
-  private running: Promise<void> | null = null;
+  private readonly running = new Map<string, Promise<void>>();
   private closed = false;
   constructor(
     private readonly port: {
@@ -42,37 +42,37 @@ export class SecretNotifications {
 
   flush(): Promise<void> {
     if (this.closed) return Promise.resolve();
-    this.running ??= this.deliver().finally(() => {
-      this.running = null;
-    });
-    return this.running;
-  }
-
-  private async deliver() {
     this.prune();
     for (const [id, notice] of this.entries) {
-      if (notice.sent || this.closed) continue;
-      try {
-        if (!(await bounded(this.port.idle(notice.agentId), false))) continue;
-        if (this.closed || this.entries.get(id) !== notice || notice.expiresAt <= this.now())
-          continue;
-        const text = notice.message();
-        if (text === null) {
-          this.entries.delete(id);
-          continue;
-        }
-        notice.sent = true;
-        const delivery = this.port.send(notice.agentId, text).then(
-          () => true,
-          () => {
-            notice.sent = false;
-            return false;
-          },
-        );
-        await bounded(delivery, false);
-      } catch {
-        // Only metadata is retried; execution still requires an unconsumed grant.
+      if (notice.sent || this.running.has(notice.agentId)) continue;
+      const delivery = this.deliver(id, notice).finally(() => {
+        this.running.delete(notice.agentId);
+      });
+      this.running.set(notice.agentId, delivery);
+    }
+    return Promise.all(this.running.values()).then(() => undefined);
+  }
+
+  private async deliver(id: string, notice: Notice) {
+    try {
+      if (!(await bounded(this.port.idle(notice.agentId), false))) return;
+      if (this.closed || this.entries.get(id) !== notice || notice.expiresAt <= this.now()) return;
+      const text = notice.message();
+      if (text === null) {
+        this.entries.delete(id);
+        return;
       }
+      notice.sent = true;
+      const delivery = this.port.send(notice.agentId, text).then(
+        () => true,
+        () => {
+          notice.sent = false;
+          return false;
+        },
+      );
+      await bounded(delivery, false);
+    } catch {
+      // Only metadata is retried; execution still requires an unconsumed grant.
     }
   }
 

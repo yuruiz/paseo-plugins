@@ -2,7 +2,6 @@ import {
   type PluginHostProps,
   type PluginTimelineItemProps,
   useRpc,
-  usePaseo,
 } from "@getpaseo/plugin/client";
 import { QuestionButton, useQuestionStyles } from "./question-ui.js";
 import { useQuery } from "@tanstack/react-query";
@@ -14,6 +13,7 @@ import {
   declineSecretRequest,
   readSecretOutput,
   releaseSecretOutput,
+  notifySecretOutput,
   discardSecretOutput,
 } from "../shared/contracts.js";
 import { SecretsForm } from "./form-view.js";
@@ -88,7 +88,7 @@ export function OutputReview({
   const read = useRpc(readSecretOutput);
   const release = useRpc(releaseSecretOutput);
   const discard = useRpc(discardSecretOutput);
-  const paseo = usePaseo();
+  const notifyOutput = useRpc(notifySecretOutput);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -121,15 +121,16 @@ export function OutputReview({
       });
   }, [read, agentId, outputId]);
   const notify = useCallback(() => {
-    void paseo.agents
-      .ref(agentId)
-      .send(
-        `Reviewed output is ready. Use Secrets MCP's read_secret_output with outputId "${outputId}".`,
-      )
-      .catch(() => {
+    void notifyOutput({ agentId, id: outputId }).then(
+      () => {
+        if (alive.current) setFailed(false);
+        return undefined;
+      },
+      () => {
         if (alive.current) setFailed(true);
-      });
-  }, [paseo, agentId, outputId]);
+      },
+    );
+  }, [notifyOutput, agentId, outputId]);
   const approve = useCallback(() => {
     if (text === null) return;
     const approved = text;
@@ -137,9 +138,11 @@ export function OutputReview({
     setStatus("busy");
     setFailed(false);
     void release({ agentId, id: outputId, text: approved })
-      .then(() => {
-        if (alive.current) setStatus("released");
-        notify();
+      .then((result) => {
+        if (alive.current) {
+          setStatus("released");
+          setFailed(!result.queued);
+        }
         return undefined;
       })
       .catch(() => {
@@ -148,7 +151,7 @@ export function OutputReview({
           setFailed(true);
         }
       });
-  }, [release, agentId, outputId, text, notify]);
+  }, [release, agentId, outputId, text]);
   const remove = useCallback(() => {
     setText(null);
     setStatus("busy");
@@ -211,10 +214,10 @@ export function OutputReview({
           <Text accessibilityRole="alert" style={styles.error}>
             Action failed or output expired. Only released text is shared with the agent.
           </Text>
-          {status === "released" ? (
-            <QuestionButton theme={theme} label="Notify agent" onPress={notify} />
-          ) : null}
         </View>
+      ) : null}
+      {status === "released" ? (
+        <QuestionButton theme={theme} label="Notify agent" onPress={notify} />
       ) : null}
     </View>
   );

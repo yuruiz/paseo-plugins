@@ -22,6 +22,7 @@ import {
   declineSecretRequest,
   readSecretOutput,
   releaseSecretOutput,
+  notifySecretOutput,
   discardSecretOutput,
   listSecrets,
   mcpConnection,
@@ -277,9 +278,34 @@ export default function contribute(server: PluginServerContext) {
   server.handle(readSecretOutput, async ({ agentId, id }) =>
     (await runtime).broker.outputs.review(agentId, id),
   );
-  server.handle(releaseSecretOutput, async ({ agentId, id, text }) => {
+  async function queueOutput(agentId: string, id: string) {
+    const { outputs } = (await runtime).broker;
+    const released = () =>
+      outputs.list(agentId).find((entry) => entry.id === id && entry.status === "released");
+    const output = released();
+    if (!output) throw new SecretsError("unavailable");
+    notifications.enqueue(id, {
+      agentId,
+      expiresAt: output.expiresAt,
+      message: () =>
+        released()
+          ? `Reviewed output is ready. Use read_secret_output with outputId "${id}".`
+          : null,
+    });
+    return { queued: true as const };
+  }
+  server.handle(notifySecretOutput, async ({ agentId, id }, { paseo }) => {
+    api = paseo;
+    return queueOutput(agentId, id);
+  });
+  server.handle(releaseSecretOutput, async ({ agentId, id, text }, { paseo }) => {
+    api = paseo;
     (await runtime).broker.outputs.release(agentId, id, text);
-    return { released: true };
+    const queued = await queueOutput(agentId, id).then(
+      () => true,
+      () => false,
+    );
+    return { released: true, queued };
   });
   server.handle(discardSecretOutput, async ({ agentId, id }) => ({
     discarded: (await runtime).broker.outputs.discard(agentId, id),

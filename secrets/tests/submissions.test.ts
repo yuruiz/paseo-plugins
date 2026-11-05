@@ -141,3 +141,66 @@ test("notifications wait for idle, retry failed delivery and stop after expiry o
   await notices.flush();
   expect(send).toHaveBeenCalledTimes(2);
 });
+
+test("unresponsive agents do not block others and archived agents are not notified", async () => {
+  let unblock!: (idle: boolean) => void;
+  const blocked = new Promise<boolean>((resolve) => {
+    unblock = resolve;
+  });
+  const send = vi.fn().mockResolvedValue(undefined);
+  const notices = new SecretNotifications({
+    idle: async (id) => (id === "a" ? blocked : true),
+    send,
+  });
+  notices.enqueue("blocked", {
+    agentId: "a",
+    expiresAt: Date.now() + 60_000,
+    message: () => "blocked",
+  });
+  notices.enqueue("ready", {
+    agentId: "b",
+    expiresAt: Date.now() + 60_000,
+    message: () => "ready",
+  });
+  await vi.waitFor(() => expect(send).toHaveBeenCalledWith("b", "ready"));
+  notices.removeAgent("a");
+  unblock(true);
+  await notices.flush();
+  expect(send).toHaveBeenCalledTimes(1);
+  notices.close();
+});
+
+test("notifications serialize per agent and do not retry an unknown send outcome", async () => {
+  vi.useFakeTimers();
+  const send = vi
+    .fn()
+    .mockImplementationOnce(() => new Promise(() => {}))
+    .mockResolvedValue(undefined);
+  const notices = new SecretNotifications({ idle: async () => true, send });
+  try {
+    notices.enqueue("first", {
+      agentId: "a",
+      expiresAt: Date.now() + 60_000,
+      message: () => "first",
+    });
+    notices.enqueue("second", {
+      agentId: "a",
+      expiresAt: Date.now() + 60_000,
+      message: () => "second",
+    });
+    const first = notices.flush();
+    await vi.advanceTimersByTimeAsync(5000);
+    await first;
+    expect(send).toHaveBeenCalledTimes(1);
+    await notices.flush();
+    expect(send.mock.calls).toEqual([
+      ["a", "first"],
+      ["a", "second"],
+    ]);
+    await notices.flush();
+    expect(send).toHaveBeenCalledTimes(2);
+  } finally {
+    notices.close();
+    vi.useRealTimers();
+  }
+});

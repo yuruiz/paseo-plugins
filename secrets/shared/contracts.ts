@@ -111,7 +111,12 @@ export const releaseSecretOutput = defineRpc({
     id: z.string().uuid(),
     text: z.string().max(1024 * 1024),
   }),
-  output: z.object({ released: z.boolean() }),
+  output: z.object({ released: z.boolean(), queued: z.boolean() }),
+});
+export const notifySecretOutput = defineRpc({
+  name: "secrets.output.notify",
+  input: z.object({ agentId: z.string(), id: z.string().uuid() }),
+  output: z.object({ queued: z.literal(true) }),
 });
 export const discardSecretOutput = defineRpc({
   name: "secrets.output.discard",
