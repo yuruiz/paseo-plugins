@@ -15,7 +15,7 @@ import {
   type SecretRequest,
 } from "../shared/contracts.js";
 
-const executionSchema = {
+export const executionSchema = {
   grantId: z.string().uuid().describe("The one-use grant ID supplied by the user in Paseo."),
   executable: z
     .string()
@@ -103,7 +103,20 @@ export async function startRuntime({ stateDirectory, onRequest, onOutput }: Runt
     await close();
     throw error;
   }
-  return { broker, requests, connect, url, close };
+  return {
+    broker,
+    requests,
+    connect,
+    url,
+    close,
+    async request(input: SecretRequestInput) {
+      if (!onRequest) throw new SecretsError("unavailable");
+      return onRequest(input, requests);
+    },
+    async publishOutput(id: string, agentId: string) {
+      await onOutput?.(id, agentId);
+    },
+  };
 }
 
 interface RequestContext {

@@ -2,15 +2,15 @@
 
 See [OVERVIEW.md](OVERVIEW.md) for behavior, requirements, and security limits.
 
-Requires Paseo 0.11.2 or later, a macOS or Linux daemon, and npm on the daemon host. Enable trusted plugins in Paseo, then install the Git release:
+Requires Paseo 0.15.1 or later on both daemon and client, a macOS or Linux daemon, and npm on the daemon host. Enable trusted plugins in Paseo, then install the Git release:
 
 ```sh
 paseo plugin install git:yuruiz/paseo-plugins:secrets
 ```
 
-The private-input workflow exposes these MCP tools:
+The private-input workflow exposes these Paseo agent tools:
 
-- `request_secrets({ agentId, purpose, fields })`: open a private input card in the current conversation. Read `PASEO_AGENT_ID` from the agent environment for the ID. Each field has an uppercase `name` and `kind: "text" | "image" | "file"`. The tool returns pending immediately; the agent should finish its turn and wait for the user's submission notification.
+- `request_secrets({ purpose, fields })`: open a private input card in the current conversation. The native tool takes the current agent identity from Paseo. Each field has an uppercase `name` and `kind: "text" | "image" | "file"`. The tool returns pending immediately; the agent should finish its turn and wait for the user's submission notification.
 - `run_with_secrets({ grantId, executable, args })`: consume one grant. Text is injected as environment values; images and credential files are injected as temporary file paths. Grants containing images or files return status and an `outputId` with empty stdout/stderr.
 - `read_secret_output({ outputId })`: read explicitly released text. Before approval it returns only `awaiting_review`. The user's release sends a notification; do not poll while waiting.
 
@@ -18,7 +18,9 @@ Select **Secrets** in the composer to browse the saved Connect connection’s se
 
 The plugin hosts an official-SDK Streamable HTTP MCP server bound to `127.0.0.1`. It exposes the private-input tools above and the Connect tools below, with no raw-input or grant-listing MCP tool. Output reading is gated by the separate client approval RPC. The grant ID authorizes one execution; keep it private. Browser-origin requests are rejected. This local endpoint does not replace the existing app-to-daemon connection used to submit secrets. The port is saved in `$PASEO_HOME/plugin-state/secrets-mcp/endpoint.json` so configurations remain valid after reload. That file contains no credentials. An occupied saved port fails explicitly rather than silently changing the endpoint.
 
-New Codex, Claude, OpenCode, and Copilot agents automatically receive the `paseo-secrets` MCP configuration. Internal agents and other providers are left unchanged. Existing agents need the endpoint added through their provider's MCP configuration and their session reloaded. Reloading an agent that predates plugin installation does not run the creation hook and cannot add a missing MCP entry by itself. The current plugin API cannot hot-add tools to an already-running session. Other MCP-capable providers can configure the same local endpoint manually. Do not expose this endpoint on the network.
+Interactive sessions receive native Secrets tools when opened, resumed or refreshed. They use Paseo's own tool transport and need no separate MCP registration. The daemon and each client must be upgraded to Paseo 0.15.1 or later before installing this version. Native execution and output reads verify that the caller owns the grant or output. This relies on the identity supplied by Paseo; it is not an OS-user isolation boundary.
+
+The existing loopback MCP endpoint remains for previously configured sessions and external MCP clients. Its request tool still takes `agentId`, and grant/output identifiers remain bearer capabilities there. New agents are no longer given a separate `paseo-secrets` MCP configuration. A session with an old manual configuration can show both tool sets; remove that provider entry to use native tools alone.
 
 For supported providers, the plugin appends `127.0.0.1`, `localhost` and `::1` to both `NO_PROXY` and `no_proxy` when an interactive session opens (create, resume, refresh or import). Existing exclusions from the inherited, provider and session environments are preserved. This keeps the agent’s local MCP connection out of HTTP/SOCKS proxies while Connect’s outbound requests continue using the saved Connect proxy. Running sessions need a reload to receive the updated environment.
 

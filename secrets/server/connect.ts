@@ -226,7 +226,37 @@ const itemSchema = z
   .object({ title: z.string().min(1), category: z.string().min(1) })
   .catchall(z.json());
 
-export function registerConnectTools(mcp: McpServer, connect: OnePasswordConnect) {
+interface ConnectToolResult {
+  [key: string]: unknown;
+  content: { type: "text"; text: string }[];
+  isError?: boolean;
+}
+interface ConnectTool {
+  name: string;
+  description: string;
+  input: z.ZodObject<z.ZodRawShape>;
+  annotations?: Record<string, boolean>;
+  run(input: unknown, signal: AbortSignal): Promise<ConnectToolResult>;
+}
+export function connectTools(connect: OnePasswordConnect) {
+  const tools: ConnectTool[] = [];
+  function registerTool<S extends z.ZodRawShape>(
+    name: string,
+    options: { description: string; inputSchema: S; annotations?: Record<string, boolean> },
+    handler: (
+      input: z.output<z.ZodObject<S>>,
+      context: { signal: AbortSignal },
+    ) => Promise<ConnectToolResult>,
+  ) {
+    const schema = z.object(options.inputSchema);
+    tools.push({
+      name,
+      description: options.description,
+      input: schema,
+      annotations: options.annotations,
+      run: (input, signal) => handler(schema.parse(input), { signal }),
+    });
+  }
   async function call(
     method: "GET" | "POST" | "PUT",
     route: string,
@@ -242,7 +272,7 @@ export function registerConnectTools(mcp: McpServer, connect: OnePasswordConnect
       return { isError: true, content: [{ type: "text" as const, text: message }] };
     }
   }
-  mcp.registerTool(
+  registerTool(
     "onepassword_list_vaults",
     {
       description: "List vaults accessible to the configured 1Password Connect token.",
@@ -251,7 +281,7 @@ export function registerConnectTools(mcp: McpServer, connect: OnePasswordConnect
     },
     (_, { signal }) => call("GET", "vaults", undefined, signal),
   );
-  mcp.registerTool(
+  registerTool(
     "onepassword_list_items",
     {
       description:
@@ -264,7 +294,7 @@ export function registerConnectTools(mcp: McpServer, connect: OnePasswordConnect
       return call("GET", `vaults/${vaultId}/items${query}`, undefined, signal);
     },
   );
-  mcp.registerTool(
+  registerTool(
     "onepassword_get_item",
     {
       description:
@@ -275,7 +305,7 @@ export function registerConnectTools(mcp: McpServer, connect: OnePasswordConnect
     ({ vaultId, itemId }, { signal }) =>
       call("GET", `vaults/${vaultId}/items/${itemId}`, undefined, signal),
   );
-  mcp.registerTool(
+  registerTool(
     "onepassword_create_item",
     {
       description:
@@ -291,7 +321,7 @@ export function registerConnectTools(mcp: McpServer, connect: OnePasswordConnect
     ({ vaultId, item }, { signal }) =>
       call("POST", `vaults/${vaultId}/items`, { ...item, vault: { id: vaultId } }, signal),
   );
-  mcp.registerTool(
+  registerTool(
     "onepassword_replace_item",
     {
       description:
@@ -312,4 +342,15 @@ export function registerConnectTools(mcp: McpServer, connect: OnePasswordConnect
         signal,
       ),
   );
+  return tools;
+}
+
+export function registerConnectTools(mcp: McpServer, connect: OnePasswordConnect) {
+  for (const tool of connectTools(connect)) {
+    mcp.registerTool(
+      tool.name,
+      { description: tool.description, inputSchema: tool.input, annotations: tool.annotations },
+      (input, { signal }) => tool.run(input, signal),
+    );
+  }
 }

@@ -17,6 +17,7 @@ import { SealedSubmissions } from "./server/submissions.js";
 import { SecretNotifications } from "./server/notifications.js";
 import { SecretsError } from "./server/errors.js";
 import { MAX_SEALED_PLAINTEXT } from "./shared/sealing.js";
+import { privateAgentTools } from "./server/agent-tools.js";
 import {
   getSecretRequest,
   declineSecretRequest,
@@ -96,10 +97,10 @@ export default function contribute(server: PluginServerContext) {
       });
     },
   });
-  server.on("agent.turn_started", (_, { paseo }) => {
+  server.addHook("agent.turn.before", async (_, { paseo }) => {
     api = paseo;
   });
-  server.on("agent.turn_ended", (_, { paseo }) => {
+  server.addHook("agent.turn.after", async (_, { paseo }) => {
     api = paseo;
     void notifications.flush();
   });
@@ -142,33 +143,31 @@ export default function contribute(server: PluginServerContext) {
     api = paseo;
     return { url: (await runtime).url };
   });
-  server.before("agent.session_open", async ({ request }, { paseo }) => {
+  server.addHook("agent.open.before", async ({ request }, { paseo }) => {
     api = paseo;
-    if (request.purpose !== "interactive" || !supportedProviders.includes(request.provider))
-      return request;
-    const { config } = await paseo.config.get();
-    const provider = z
-      .object({ env: z.record(z.string(), z.string()).optional() })
-      .parse(config.providers[request.provider] ?? {});
-    return { ...request, env: withLoopbackBypass({ env: request.env, providerEnv: provider.env }) };
-  });
-  server.before("agent.create", async ({ request }, { paseo }) => {
-    api = paseo;
-    // Other providers can opt in through their own MCP configuration.
-    if (!supportedProviders.includes(request.config.provider)) return request;
-    if (request.config.internal) return request;
-    const { url } = await runtime;
-    const existing = request.config.mcpServers?.["paseo-secrets"];
-    if (existing && (existing.type !== "http" || existing.url !== url)) {
-      throw new Error("The paseo-secrets MCP server name is already configured.");
-    }
-    return {
-      ...request,
-      config: {
-        ...request.config,
-        mcpServers: { ...request.config.mcpServers, "paseo-secrets": { type: "http", url } },
+    if (request.purpose !== "interactive") return request;
+    const active = await runtime;
+    const tools = privateAgentTools({
+      broker: active.broker,
+      connect: active.connect,
+      request(input, context) {
+        api = context.paseo;
+        return active.request(input);
       },
-    };
+      output(id, agentId, context) {
+        api = context.paseo;
+        return active.publishOutput(id, agentId);
+      },
+    });
+    let env = request.env;
+    if (supportedProviders.includes(request.provider)) {
+      const { config } = await paseo.config.get();
+      const provider = z
+        .object({ env: z.record(z.string(), z.string()).optional() })
+        .parse(config.providers[request.provider] ?? {});
+      env = withLoopbackBypass({ env, providerEnv: provider.env });
+    }
+    return { ...request, env, tools: [...request.tools, ...tools] };
   });
   server.handle(openSecrets, async ({ agentId }, { paseo }) => {
     api = paseo;
@@ -310,7 +309,7 @@ export default function contribute(server: PluginServerContext) {
   server.handle(discardSecretOutput, async ({ agentId, id }) => ({
     discarded: (await runtime).broker.outputs.discard(agentId, id),
   }));
-  server.on("agent.archived", async ({ agent }) => {
+  server.addHook("agent.archive.after", async ({ agent }) => {
     notifications.removeAgent(agent.id);
     const { broker } = await runtime;
     broker.revokeAgent(agent.id);

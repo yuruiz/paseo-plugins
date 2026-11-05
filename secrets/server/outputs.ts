@@ -57,8 +57,9 @@ export class SecretOutputs {
     entry.text = "";
   }
 
-  read(id: string) {
+  read(id: string, agentId?: string) {
     const entry = this.get(id);
+    if (agentId && entry.agentId !== agentId) throw new SecretsError("unavailable");
     if (entry.releasedText === null) return { status: "awaiting_review" as const };
     return { status: "released" as const, text: entry.releasedText };
   }

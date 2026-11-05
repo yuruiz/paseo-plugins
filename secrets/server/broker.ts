@@ -40,6 +40,7 @@ interface SubmitOptions {
 }
 interface ExecuteOptions {
   id: string;
+  agentId?: string;
   executable: string;
   args: string[];
   signal?: AbortSignal;
@@ -127,6 +128,7 @@ export class SecretsBroker {
     this.expire();
     const grant = this.grants.get(options.id);
     if (!grant) throw new SecretsError("unavailable");
+    if (options.agentId && grant.agentId !== options.agentId) throw new SecretsError("unavailable");
     if (this.executions.size >= 8) throw new SecretsError("capacity");
     const hasPrivateFiles = grant.images.length + grant.files.length > 0;
     if (hasPrivateFiles) {
