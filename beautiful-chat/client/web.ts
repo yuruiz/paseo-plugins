@@ -86,3 +86,22 @@ export function insertIntoSelectionComposer(surface: Element, snippet: string): 
   input.setSelectionRange(caret, caret);
   return true;
 }
+
+export function prepareRewindComposerRestore(surface: unknown): (text: string) => boolean {
+  if (Platform.OS !== "web" || typeof document === "undefined" || !(surface instanceof Element)) {
+    return () => false;
+  }
+  const chat = surface.closest(CHAT_SELECTOR);
+  const input = composerForSelection(surface);
+  return (text) => {
+    if (!chat || !input || composerForSelection(chat) !== input) return false;
+    if (input.value.length > 0) return true;
+    const prototype = input instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setValue = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+    if (!setValue) return false;
+    setValue.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return input.value === text;
+  };
+}

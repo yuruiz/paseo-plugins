@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { useAgent, usePaseo, useRpc } from "@getpaseo/plugin/client";
 import { useRevealedText } from "@getpaseo/plugin/client/react-native";
@@ -9,6 +9,7 @@ import { ToolCallout } from "./components/tool-callouts";
 import { ReasoningTrace } from "./components/reasoning-trace";
 import { TaskList } from "./components/task-list";
 import { UserMessage } from "./components/user-message";
+import { RewindAction } from "./components/rewind-action";
 import { hostFontEscape } from "./components/host-font-escape";
 import { promptRowAnchor } from "./components/prompt-anchor";
 import { surfaceProps } from "./components/view-props";
@@ -846,8 +847,10 @@ export function LiveUserMessageRenderer({
   item,
   theme,
   agentId,
+  host,
   timestamp,
 }: PluginTimelineItemProps<LiveUserMessagePayload>) {
+  const surface = useRef<View>(null);
   const preferences = useEnhancerPreferences();
   const tokens = useMemo(
     () => buildThemeTokens(theme.colors, preferences),
@@ -897,7 +900,7 @@ export function LiveUserMessageRenderer({
   const envelope = useMemo(() => parseSystemEnvelope(item.data.text), [item.data.text]);
 
   return (
-    <View {...surfaceProps(hostFontEscape, promptRowAnchor(item.data.messageId))}>
+    <View ref={surface} {...surfaceProps(hostFontEscape, promptRowAnchor(item.data.messageId))}>
       {envelope ? (
         <SystemCard envelope={envelope} tokens={tokens} />
       ) : (
@@ -908,6 +911,16 @@ export function LiveUserMessageRenderer({
           tokens={tokens}
           usage={observedLive ? usage : null}
           pending={running && !frozen}
+          rewindAction={item.data.messageId ? (
+            <RewindAction
+              hostId={host.id}
+              agentId={agentId}
+              messageId={item.data.messageId}
+              text={item.data.text}
+              surface={surface}
+              tokens={tokens}
+            />
+          ) : null}
         />
       )}
     </View>

@@ -27,6 +27,7 @@ interface UserMessageProps {
   usage?: TurnUsage | null;
   /** True while the turn is still running, so the figures are still climbing. */
   pending?: boolean;
+  rewindAction?: React.ReactNode;
 }
 
 /**
@@ -86,6 +87,7 @@ export function UserMessage({
   tokens,
   usage,
   pending = false,
+  rewindAction,
 }: UserMessageProps) {
   const [copied, setCopied] = useState(false);
   const handleCopy = useCallback(() => {
@@ -199,6 +201,7 @@ export function UserMessage({
               {formatClock(timestamp)}
             </Text>
           ) : null}
+          {rewindAction}
           <Pressable
             onPress={handleCopy}
             accessibilityRole="button"

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Platform } from "react-native";
-import { insertIntoSelectionComposer } from "./web";
+import { insertIntoSelectionComposer, prepareRewindComposerRestore } from "./web";
 
 vi.mock("react-native", () => ({ Platform: { OS: "web" } }));
 
@@ -125,5 +125,50 @@ describe("Add to chat ownership", () => {
     Platform.OS = "ios";
     expect(insertIntoSelectionComposer(source("selected"), snippet)).toBe(false);
     expect(input("selected").value).toBe("");
+  });
+});
+
+describe("Rewind composer restoration", () => {
+  it("restores only the owning composer after rewind removes the prompt row", () => {
+    document.body.innerHTML = `<section>${chat("other")}${chat("selected")}</section>`;
+    const onInput = vi.fn();
+    input("selected").addEventListener("input", onInput);
+    const restore = prepareRewindComposerRestore(source("selected"));
+    source("selected").remove();
+
+    expect(restore("Original prompt")).toBe(true);
+    expect(input("selected").value).toBe("Original prompt");
+    expect(input("other").value).toBe("");
+    expect(onInput).toHaveBeenCalledOnce();
+    expect(onInput.mock.calls[0]![0].bubbles).toBe(true);
+  });
+
+  it("preserves a draft typed while rewind is pending", () => {
+    document.body.innerHTML = chat("selected");
+    const restore = prepareRewindComposerRestore(source("selected"));
+    input("selected").value = "New draft";
+    expect(restore("Original prompt")).toBe(true);
+    expect(input("selected").value).toBe("New draft");
+  });
+
+  it.each(["hidden", "removed", "replaced", "disabled"])(
+    "does not restore into a chat that became %s while pending",
+    (change) => {
+      document.body.innerHTML = `<section>${chat("other")}${chat("selected")}</section>`;
+      const restore = prepareRewindComposerRestore(source("selected"));
+      const selected = input("selected");
+      if (change === "hidden") document.getElementById("selected-panel")!.style.display = "none";
+      if (change === "removed") document.getElementById("selected-panel")!.remove();
+      if (change === "replaced") selected.replaceWith(selected.cloneNode());
+      if (change === "disabled") selected.disabled = true;
+      expect(restore("Original prompt")).toBe(false);
+      expect(selected.value).toBe("");
+      expect(input("other").value).toBe("");
+    },
+  );
+
+  it("provides a no-op on native platforms", () => {
+    Platform.OS = "ios";
+    expect(prepareRewindComposerRestore({})("Original prompt")).toBe(false);
   });
 });

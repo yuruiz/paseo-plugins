@@ -140,8 +140,13 @@ actions the host owns.
 
 ### Prompt bubble
 
-The authored turn on a raised theme surface with a square tail, a copy button, and the turn's token
-usage.
+The authored turn on a raised theme surface with a square tail, copy and rewind buttons, and the
+turn's token usage. **Rewind to this message** offers conversation, files, or both, according to the
+provider's capabilities. Rewinding cannot be undone.
+
+After a conversation rewind, the original prompt returns to its chat's empty composer on desktop
+and web. Existing drafts are preserved. If the composer cannot be restored, including on native
+mobile, the prompt is copied for pasting instead.
 
 ![Prompt bubble](docs/images/user.png)
 
