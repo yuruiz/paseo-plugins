@@ -51,10 +51,12 @@ export class SecretRequests {
     const supplied = new Map([
       ...bundle.secrets.map((secret) => [secret.name, "text"] as const),
       ...bundle.images.map((image) => [image.name, "image"] as const),
+      ...(bundle.files ?? []).map((file) => [file.name, "file"] as const),
     ]);
     const omitted = new Set(skipped);
     if (
-      supplied.size !== bundle.secrets.length + bundle.images.length ||
+      supplied.size !==
+        bundle.secrets.length + bundle.images.length + (bundle.files?.length ?? 0) ||
       omitted.size !== skipped.length ||
       supplied.size + omitted.size !== request.fields.length ||
       request.fields.some((field) =>
@@ -64,6 +66,10 @@ export class SecretRequests {
       )
     )
       throw new SecretsError("invalid");
+    for (const file of bundle.files ?? []) {
+      const field = request.fields.find((entry) => entry.name === file.name);
+      if (file.format !== (field?.format ?? "any")) throw new SecretsError("invalid");
+    }
     const grant = supplied.size > 0 ? create() : null;
     const result = grant && skipped.length ? { ...grant, skippedNames: [...skipped] } : grant;
     request.status = result ? "fulfilled" : "skipped";

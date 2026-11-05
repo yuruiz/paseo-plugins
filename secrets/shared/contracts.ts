@@ -14,6 +14,18 @@ export const imageSchema = z.object({
     .regex(/^[A-Za-z0-9+/]+={0,2}$/),
 });
 export type SecretImage = z.infer<typeof imageSchema>;
+export const MAX_FILE_BYTES = 128 * 1024;
+export const fileFormatSchema = z.enum(["any", "json", "pem"]);
+export const fileSchema = z.object({
+  name: nameSchema,
+  format: fileFormatSchema.default("any"),
+  data: z
+    .string()
+    .min(4)
+    .max(Math.ceil(MAX_FILE_BYTES / 3) * 4)
+    .regex(/^[A-Za-z0-9+/]+={0,2}$/),
+});
+export type SecretFile = z.infer<typeof fileSchema>;
 export const secretSchema = z.object({
   name: nameSchema,
   value: z
@@ -34,6 +46,7 @@ export const grantSchema = z.object({
   id: z.string(),
   names: z.array(z.string()),
   imageNames: z.array(z.string()).optional(),
+  fileNames: z.array(z.string()).optional(),
   skippedNames: z.array(z.string()).optional(),
   expiresAt: z.number(),
 });
@@ -41,10 +54,13 @@ export type Secret = z.infer<typeof secretSchema>;
 const bundleFields = {
   secrets: z.array(secretSchema).max(32),
   images: z.array(imageSchema).max(4).default([]),
+  files: z.array(fileSchema).max(32).default([]),
 };
-function validBundle(bundle: { secrets: Secret[]; images: SecretImage[] }) {
-  const names = [...bundle.secrets, ...bundle.images].map((entry) => entry.name);
-  const imageBytes = bundle.images.reduce(
+function validBundle(bundle: { secrets: Secret[]; images: SecretImage[]; files?: SecretFile[] }) {
+  const names = [...bundle.secrets, ...bundle.images, ...(bundle.files ?? [])].map(
+    (entry) => entry.name,
+  );
+  const imageBytes = [...bundle.images, ...(bundle.files ?? [])].reduce(
     (sum, entry) => sum + (entry.data.length * 3) / 4 - (entry.data.match(/=+$/)?.[0].length ?? 0),
     0,
   );
@@ -58,7 +74,11 @@ function validBundle(bundle: { secrets: Secret[]; images: SecretImage[] }) {
 export const bundleSchema = z.object(bundleFields).refine(validBundle);
 export type SecretBundle = z.infer<typeof bundleSchema>;
 export type Grant = z.infer<typeof grantSchema>;
-export const requestedFieldSchema = z.object({ name: nameSchema, kind: z.enum(["text", "image"]) });
+export const requestedFieldSchema = z.object({
+  name: nameSchema,
+  kind: z.enum(["text", "image", "file"]),
+  format: fileFormatSchema.optional(),
+});
 export type RequestedField = z.infer<typeof requestedFieldSchema>;
 export const requestInputSchema = z
   .object({
@@ -136,7 +156,10 @@ export function grantNotification(grant: Grant) {
   const skipped = grant.skippedNames?.length
     ? ` The user skipped ${grant.skippedNames.join(", ")}; those fields are unavailable.`
     : "";
-  return `${grant.names.join(", ")} is ready for one use. Use Secrets MCP's run_with_secrets with grantId "${grant.id}".${images}${skipped}`;
+  const files = grant.fileNames?.length
+    ? ` File fields (${grant.fileNames.join(", ")}) contain temporary paths; all output requires user review.`
+    : "";
+  return `${grant.names.join(", ")} is ready for one use. Use run_with_secrets with grantId "${grant.id}".${images}${files}${skipped}`;
 }
 export const openSecrets = defineRpc({
   name: "secrets.open",
@@ -151,7 +174,10 @@ export const submissionPayloadSchema = z
   .refine(
     (bundle) =>
       validBundle(bundle) ||
-      (bundle.secrets.length === 0 && bundle.images.length === 0 && bundle.skipped.length > 0),
+      (bundle.secrets.length === 0 &&
+        bundle.images.length === 0 &&
+        bundle.files.length === 0 &&
+        bundle.skipped.length > 0),
   );
 const submissionTarget = { agentId: z.string().min(1), requestId: z.string().uuid().optional() };
 export const submissionResultSchema = z.object({

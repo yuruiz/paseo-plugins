@@ -210,10 +210,10 @@ export default function contribute(server: PluginServerContext) {
           JSON.parse(new TextDecoder().decode(bytes)),
         );
         if (!parsed.success) throw new SecretsError("invalid");
-        const { secrets, images, skipped } = parsed.data;
-        const create = () => broker.submit({ agentId, cwd, secrets, images });
+        const { secrets, images, files, skipped } = parsed.data;
+        const create = () => broker.submit({ agentId, cwd, secrets, images, files });
         if (requestId)
-          return requests.submit(agentId, requestId, { secrets, images }, skipped, create);
+          return requests.submit(agentId, requestId, { secrets, images, files }, skipped, create);
         if (skipped.length) throw new SecretsError("invalid");
         return { grant: create(), skipped: [] };
       });

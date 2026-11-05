@@ -6,11 +6,16 @@ import {
   type Secret,
   type SecretImage,
   type RequestedField,
+  type SecretFile,
+  fileSchema,
 } from "../shared/contracts.js";
+import { validSecretFile } from "../shared/files.js";
 
 export interface SecretField extends Secret {
   id: number;
-  kind: "text" | "image";
+  kind: "text" | "image" | "file";
+  format?: SecretFile["format"];
+  file?: Omit<SecretFile, "name">;
   skipped?: boolean;
   image?: Omit<SecretImage, "name">;
 }
@@ -24,7 +29,12 @@ interface FormState {
 }
 
 export function createSecretForm(
-  submit: (secrets: Secret[], images: SecretImage[], skipped: string[]) => Promise<void>,
+  submit: (
+    secrets: Secret[],
+    images: SecretImage[],
+    skipped: string[],
+    files: SecretFile[],
+  ) => Promise<void>,
   requested?: RequestedField[],
   retry?: { available(): boolean; send(): Promise<void> },
 ) {
@@ -70,7 +80,7 @@ export function createSecretForm(
       if (!requested || closed || state.status !== "editing") return;
       const fields = state.fields.map((field, index) =>
         index === state.activeIndex
-          ? { ...field, skipped: true, value: "", image: undefined }
+          ? { ...field, skipped: true, value: "", image: undefined, file: undefined }
           : field,
       );
       publish({
@@ -108,7 +118,17 @@ export function createSecretForm(
         ),
       });
     },
-    add(kind: "text" | "image" = "text") {
+    setFile(id: number, file: Omit<SecretFile, "name">) {
+      if (closed || state.status !== "editing") return;
+      publish({
+        ...state,
+        error: null,
+        fields: state.fields.map((field) =>
+          field.id === id && !field.skipped ? { ...field, file } : field,
+        ),
+      });
+    },
+    add(kind: "text" | "image" | "file" = "text") {
       if (requested || closed || state.status !== "editing" || state.fields.length >= 32) return;
       publish({ ...state, fields: [...state.fields, { id: nextId++, name: "", value: "", kind }] });
     },
@@ -121,6 +141,13 @@ export function createSecretForm(
       const skipped = state.fields.filter((field) => field.skipped).map((field) => field.name);
       const allSkipped = Boolean(requested) && skipped.length === state.fields.length;
       const parsed = bundleSchema.safeParse({
+        files: state.fields
+          .filter((field) => field.kind === "file" && !field.skipped)
+          .map((field) => ({
+            name: field.name,
+            data: field.file?.data,
+            format: field.file?.format,
+          })),
         secrets: state.fields.filter((field) => field.kind === "text" && !field.skipped),
         images: state.fields
           .filter((field) => field.kind === "image" && !field.skipped)
@@ -130,28 +157,38 @@ export function createSecretForm(
             data: field.image?.data,
           })),
       });
-      if (!parsed.success && !allSkipped) {
+      if (
+        (!parsed.success || parsed.data.files.some((file) => !validSecretFile(file))) &&
+        !allSkipped
+      ) {
         const missingIndex = state.fields.findIndex(
-          (field) => !field.skipped && (field.kind === "image" ? !field.image : !field.value),
+          (field) => !field.skipped && !isSecretFieldReady(field),
         );
         let error =
-          "Use unique uppercase names. Text: 16 KiB each. Images: up to four PNG, JPEG or WebP files, 4 MiB total.";
+          "Use unique uppercase names. Text: 16 KiB each. Files: 128 KiB each. Images and files: 4 MiB total.";
         if (missingIndex >= 0) {
           const missing = state.fields[missingIndex];
           const label = nameSchema.safeParse(missing.name).success
             ? missing.name
             : `field ${missingIndex + 1}`;
-          error =
-            missing.kind === "image"
-              ? `Choose an image for ${label}. This field is required.`
-              : `Enter a secret value for ${label}. This field is required.`;
+          const action = {
+            text: "Enter a secret value",
+            image: "Choose an image",
+            file: "Choose a valid file",
+          }[missing.kind];
+          error = `${action} for ${label}. This field is required.`;
         }
         publish({ ...state, error });
         return;
       }
-      const data = parsed.success ? parsed.data : { secrets: [], images: [] };
+      const data = parsed.success ? parsed.data : { secrets: [], images: [], files: [] };
       // Send directly: mutation/query caches and retry queues must never own raw values.
-      const fields = state.fields.map((field) => ({ ...field, value: "", image: undefined }));
+      const fields = state.fields.map((field) => ({
+        ...field,
+        value: "",
+        image: undefined,
+        file: undefined,
+      }));
       publish({
         ...state,
         fields,
@@ -161,7 +198,7 @@ export function createSecretForm(
         error: null,
       });
       try {
-        await submit(data.secrets, data.images, skipped);
+        await submit(data.secrets, data.images, skipped, data.files);
         if (!closed) publish({ ...state, status: "saved" });
       } catch {
         if (!closed)
@@ -176,6 +213,7 @@ export function createSecretForm(
       } finally {
         data.secrets.length = 0;
         data.images.length = 0;
+        data.files.length = 0;
       }
     },
     async retry() {
@@ -205,6 +243,11 @@ export type SecretForm = ReturnType<typeof createSecretForm>;
 
 export function isSecretFieldReady(field: SecretField) {
   if (field.skipped) return true;
+  if (field.kind === "file")
+    return (
+      fileSchema.safeParse({ name: field.name, ...field.file }).success &&
+      Boolean(field.file && validSecretFile(field.file))
+    );
   return field.kind === "text"
     ? secretSchema.safeParse(field).success
     : imageSchema.safeParse({ name: field.name, ...field.image }).success;

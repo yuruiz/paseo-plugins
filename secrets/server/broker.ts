@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
-import { bundleSchema, type Secret, type SecretImage } from "../shared/contracts.js";
+import {
+  bundleSchema,
+  type Secret,
+  type SecretImage,
+  type SecretFile,
+} from "../shared/contracts.js";
+import { validSecretFile } from "../shared/files.js";
 
 import { mkdir, mkdtemp, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
@@ -21,6 +27,7 @@ interface StoredGrant {
   cwd: string;
   secrets: Secret[];
   images: SecretImage[];
+  files: SecretFile[];
   expiresAt: number;
   timer: ReturnType<typeof setTimeout>;
 }
@@ -29,6 +36,7 @@ interface SubmitOptions {
   cwd: string;
   secrets: Secret[];
   images?: SecretImage[];
+  files?: SecretFile[];
 }
 interface ExecuteOptions {
   id: string;
@@ -56,7 +64,7 @@ export class SecretsBroker {
   private readonly now: () => number;
   private readonly executionTimeoutMs: number;
   private closed = false;
-  private imageExecutions = 0;
+  private fileExecutions = 0;
   readonly outputs: SecretOutputs;
   private readonly imageDirectory: string;
 
@@ -72,13 +80,16 @@ export class SecretsBroker {
     const parsed = bundleSchema.safeParse({
       secrets: options.secrets,
       images: options.images ?? [],
+      files: options.files ?? [],
     });
     // Never propagate validation errors containing the input to the plugin logger.
     if (!parsed.success) throw new SecretsError("invalid");
     for (const image of parsed.data.images) validateImage(image);
+    for (const file of parsed.data.files)
+      if (!validSecretFile(file)) throw new SecretsError("invalid");
     this.expire();
     const size = [...this.grants.values()].reduce(
-      (sum, grant) => sum + JSON.stringify([grant.secrets, grant.images]).length * 2,
+      (sum, grant) => sum + JSON.stringify([grant.secrets, grant.images, grant.files]).length * 2,
       0,
     );
     if (size + JSON.stringify(parsed.data).length * 2 > 32 * 1024 * 1024)
@@ -117,10 +128,10 @@ export class SecretsBroker {
     const grant = this.grants.get(options.id);
     if (!grant) throw new SecretsError("unavailable");
     if (this.executions.size >= 8) throw new SecretsError("capacity");
-    const hasImages = grant.images.length > 0;
-    if (hasImages) {
-      this.outputs.assertCapacity(this.imageExecutions);
-      this.imageExecutions++;
+    const hasPrivateFiles = grant.images.length + grant.files.length > 0;
+    if (hasPrivateFiles) {
+      this.outputs.assertCapacity(this.fileExecutions);
+      this.fileExecutions++;
     }
     // Claim synchronously before spawning or awaiting, including failed executions.
     this.remove(grant.id);
@@ -139,10 +150,11 @@ export class SecretsBroker {
       return await execution;
     } finally {
       this.executions.delete(controller);
-      if (hasImages) this.imageExecutions--;
+      if (hasPrivateFiles) this.fileExecutions--;
       options.signal?.removeEventListener("abort", cancel);
       grant.secrets = [];
       grant.images = [];
+      grant.files = [];
     }
   }
 
@@ -155,13 +167,13 @@ export class SecretsBroker {
   }
 
   private async runGrant(options: RunOptions): Promise<ExecutionResult> {
-    if (!options.grant.images.length) return run(options);
+    if (!options.grant.images.length && !options.grant.files.length) return run(options);
     let directory: string | undefined;
     try {
       await mkdir(this.imageDirectory, { recursive: true, mode: 0o700 });
       directory = await mkdtemp(path.join(this.imageDirectory, "image-"));
       const files: Secret[] = [];
-      for (const [index, image] of options.grant.images.entries()) {
+      for (const [index, image] of [...options.grant.images, ...options.grant.files].entries()) {
         const filename = path.join(directory, String(index));
         await writeFile(filename, Buffer.from(image.data, "base64"), { mode: 0o600 });
         files.push({ name: image.name, value: filename });
@@ -180,8 +192,9 @@ export class SecretsBroker {
   private describe(grant: StoredGrant) {
     return {
       id: grant.id,
-      names: [...grant.secrets, ...grant.images].map((secret) => secret.name),
+      names: [...grant.secrets, ...grant.images, ...grant.files].map((secret) => secret.name),
       imageNames: grant.images.map((image) => image.name),
+      fileNames: grant.files.map((file) => file.name),
       expiresAt: grant.expiresAt,
     };
   }

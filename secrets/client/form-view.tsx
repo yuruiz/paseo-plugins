@@ -8,8 +8,10 @@ import {
   completeSecretSubmission,
   type Grant,
   type SecretRequest,
+  MAX_FILE_BYTES,
 } from "../shared/contracts.js";
-import { canPickImage, pickImage } from "./web.js";
+import { canPickImage, pickImage, pickSecretFile } from "./web.js";
+import { pastedSecretFile } from "../shared/files.js";
 import { createSecretForm, isSecretFieldReady, type SecretField, type SecretForm } from "./form.js";
 import { createSealedSender } from "./submission.js";
 import { QuestionButton, useQuestionStyles } from "./question-ui.js";
@@ -32,8 +34,8 @@ export function SecretsForm({ agentId, theme, layout, onSaved, request, onDeclin
   );
   const [form] = useState(() =>
     createSecretForm(
-      async (secrets, images, skipped) => {
-        const result = await sender.submit({ secrets, images, skipped });
+      async (secrets, images, skipped, files) => {
+        const result = await sender.submit({ secrets, images, skipped, files });
         onSaved(result.grant, result.skipped);
       },
       request?.fields,
@@ -77,6 +79,7 @@ export function SecretsForm({ agentId, theme, layout, onSaved, request, onDeclin
     }
   }, [form, last]);
   const addText = useCallback(() => form.add("text"), [form]);
+  const addFile = useCallback(() => form.add("file"), [form]);
   const addImage = useCallback(() => form.add("image"), [form]);
   const primaryLabel = primaryActionLabel(pending, last, allSkipped);
   const disabled = pending || (Boolean(request) && !(last ? complete : isSecretFieldReady(active)));
@@ -126,6 +129,7 @@ export function SecretsForm({ agentId, theme, layout, onSaved, request, onDeclin
                 onPress={addText}
                 disabled={pending}
               />
+              <QuestionButton theme={theme} label="Add file" onPress={addFile} disabled={pending} />
               {canPickImage() ? (
                 <QuestionButton
                   theme={theme}
@@ -195,19 +199,6 @@ interface InputsProps {
 
 function SecretInputs({ theme, form, field, pending, fixed, onSubmit }: InputsProps) {
   const styles = useQuestionStyles(theme);
-  const [imageError, setImageError] = useState(false);
-  const [reading, setReading] = useState(false);
-  const choose = useCallback(() => {
-    setImageError(false);
-    setReading(true);
-    void pickImage()
-      .then((image) => {
-        if (image) form.setImage(field.id, image);
-        return undefined;
-      })
-      .catch(() => setImageError(true))
-      .finally(() => setReading(false));
-  }, [form, field.id]);
   const editName = useCallback(
     (value: string) => form.edit(field.id, "name", value),
     [form, field.id],
@@ -218,9 +209,8 @@ function SecretInputs({ theme, form, field, pending, fixed, onSubmit }: InputsPr
   );
   const restore = useCallback(() => form.restore(field.id), [form, field.id]);
   const remove = useCallback(() => form.remove(field.id), [form, field.id]);
-  let imageAction = field.image ? "Replace image" : "Choose image";
-  if (reading) imageAction = "Reading image...";
-  const caption = field.kind === "image" ? "Choose an image" : "Enter a secret value";
+  const caption =
+    field.kind === "text" ? "Enter a secret value" : `Provide a private ${field.kind}`;
   if (field.skipped)
     return (
       <View style={styles.field}>
@@ -253,33 +243,8 @@ function SecretInputs({ theme, form, field, pending, fixed, onSubmit }: InputsPr
           style={styles.input}
         />
       )}
-      {field.kind === "image" ? (
-        <View style={styles.image}>
-          <Icon
-            name={field.image ? "Check" : "ImagePlus"}
-            size={24}
-            color={theme.colors.foregroundMuted}
-          />
-          <Text style={styles.text}>
-            {field.image ? "Private image selected" : "No image selected"}
-          </Text>
-          <Text style={styles.muted}>
-            {canPickImage()
-              ? "PNG, JPEG or WebP · Up to 4 MiB total"
-              : "Open this request on desktop or in a browser to select an image"}
-          </Text>
-          <QuestionButton
-            theme={theme}
-            label={imageAction}
-            onPress={choose}
-            disabled={pending || reading || !canPickImage()}
-          />
-          {imageError ? (
-            <Text accessibilityRole="alert" style={styles.error}>
-              Could not read image. Choose a PNG, JPEG or WebP file up to 4 MiB.
-            </Text>
-          ) : null}
-        </View>
+      {field.kind !== "text" ? (
+        <PrivateFileInput theme={theme} form={form} field={field} pending={pending} />
       ) : (
         <TextInput
           accessibilityLabel="Secret value"
@@ -298,6 +263,92 @@ function SecretInputs({ theme, form, field, pending, fixed, onSubmit }: InputsPr
       )}
       {!fixed && form.getState().fields.length > 1 ? (
         <QuestionButton theme={theme} label="Remove" onPress={remove} disabled={pending} />
+      ) : null}
+    </View>
+  );
+}
+
+function PrivateFileInput({
+  theme,
+  form,
+  field,
+  pending,
+}: Pick<InputsProps, "theme" | "form" | "field" | "pending">) {
+  const styles = useQuestionStyles(theme);
+  const [imageError, setImageError] = useState(false);
+  const [reading, setReading] = useState(false);
+  const choose = useCallback(() => {
+    setImageError(false);
+    setReading(true);
+    void (field.kind === "file" ? pickSecretFile(field.format ?? "any") : pickImage())
+      .then((image) => {
+        if (image) {
+          if ("format" in image) form.setFile(field.id, image);
+          else form.setImage(field.id, image);
+        }
+        return undefined;
+      })
+      .catch(() => setImageError(true))
+      .finally(() => setReading(false));
+  }, [form, field.id, field.kind, field.format]);
+  const pasteFile = useCallback(
+    (value: string) => {
+      const file = pastedSecretFile(value, field.format ?? "any");
+      if (file) form.setFile(field.id, file);
+      else form.setFile(field.id, { data: "", format: field.format ?? "any" });
+    },
+    [form, field.id, field.format],
+  );
+  let imageAction = field.image ? "Replace image" : "Choose image";
+  if (field.kind === "file") imageAction = field.file ? "Replace file" : "Choose file";
+  if (reading) imageAction = "Reading file...";
+  return (
+    <View style={styles.image}>
+      <Icon
+        name={field.image || field.file ? "Check" : "File"}
+        size={24}
+        color={theme.colors.foregroundMuted}
+      />
+      <Text style={styles.text}>
+        {field.image || field.file ? "Private file selected" : "No file selected"}
+      </Text>
+      {field.kind === "file" ? (
+        <Text style={styles.muted}>
+          Up to {MAX_FILE_BYTES / 1024} KiB · {field.format ?? "any"} format · Output requires
+          review
+        </Text>
+      ) : (
+        <Text style={styles.muted}>
+          {canPickImage()
+            ? "PNG, JPEG or WebP · Up to 4 MiB total"
+            : "Open this request on desktop or in a browser to select an image"}
+        </Text>
+      )}
+      <QuestionButton
+        theme={theme}
+        label={imageAction}
+        onPress={choose}
+        disabled={pending || reading || !canPickImage()}
+      />
+      {field.kind === "file" ? (
+        <TextInput
+          key={field.id}
+          accessibilityLabel="Paste credential file"
+          placeholder="Or paste file contents"
+          multiline
+          secureTextEntry
+          autoComplete="off"
+          autoCorrect={false}
+          autoCapitalize="none"
+          onChangeText={pasteFile}
+          editable={!pending}
+          style={styles.input}
+        />
+      ) : null}
+      {imageError ? (
+        <Text accessibilityRole="alert" style={styles.error}>
+          Could not read the selected file. Check its format and size.
+        </Text>
       ) : null}
     </View>
   );

@@ -161,7 +161,7 @@ async function handleRequest({
     {
       title: "Request private input",
       description:
-        "Ask the user for sensitive text or images in their current Paseo conversation. Supply this Paseo agent ID (read PASEO_AGENT_ID from your environment), a clear purpose and named fields. Text becomes an environment value; image becomes a private file path in the named environment variable. Returns pending immediately. Finish your turn and wait for the user's grant notification; do not poll. Never ask the user to paste private data into chat. Image output requires user review before release.",
+        "Ask the user for sensitive text, images or credential files in their current Paseo conversation. Supply this Paseo agent ID (read PASEO_AGENT_ID from your environment), a clear purpose and named fields. Text becomes an environment value; image or file becomes a private file path in the named environment variable. Returns pending immediately. Finish your turn and wait for the user's grant notification; do not poll. Never ask the user to paste private data into chat. Image and file output requires user review before release.",
       inputSchema: requestInputSchema,
     },
     async (requestInput) => {
@@ -215,7 +215,7 @@ async function handleRequest({
     {
       title: "Run with secrets",
       description:
-        "Execute a command with the user's one-use Paseo secrets grant. Values are injected into the child environment, never returned directly. Runs in the grant's agent working directory. Text-only output is buffered and exact values are masked. For grants containing images, ALL output is held for user review; only status and outputId are returned. Image paths are injected as environment variables and deleted after execution. The grant is consumed even on failure. Maximum execution: 120 seconds, 1 MiB output. Do not print, persist, encode or inspect credentials. Supply executable and argv; explicitly use sh -c for shell syntax. No interactive input or background services.",
+        "Execute a command with the user's one-use Paseo secrets grant. Values are injected into the child environment, never returned directly. Runs in the grant's agent working directory. Text-only output is buffered and exact values are masked. For grants containing images or files, ALL output is held for user review; only status and outputId are returned. Private file paths are injected as environment variables and deleted after execution. The grant is consumed even on failure. Maximum execution: 120 seconds, 1 MiB output. Do not print, persist, encode or inspect credentials. Supply executable and argv; explicitly use sh -c for shell syntax. No interactive input or background services.",
       inputSchema: executionSchema,
       annotations: {
         readOnlyHint: false,
