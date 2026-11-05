@@ -37,7 +37,7 @@ export async function sendConnectItem(
   connect: OnePasswordConnect,
   broker: SecretsBroker,
   input: { agentId: string; cwd: string; vaultId: string; itemId: string },
-  send: (message: string) => Promise<unknown>,
+  send: (message: string, grant: Grant) => Promise<unknown>,
 ) {
   const vaultId = connectIdSchema.parse(input.vaultId);
   const itemId = connectIdSchema.parse(input.itemId);
@@ -57,7 +57,7 @@ export async function sendConnectItem(
       cwd: input.cwd,
       secrets: itemSecrets(item.data),
     });
-    await send(grantNotification(grant));
+    await send(grantNotification(grant), grant);
   } catch {
     if (grant) broker.revoke(input.agentId, grant.id);
     // Neither upstream responses nor a send error may echo the secret into RPC errors/logs.

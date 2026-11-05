@@ -168,7 +168,7 @@ async function handleRequest({
   const controller = new AbortController();
   const cancel = () => controller.abort();
   response.once("close", cancel);
-  const mcp = new McpServer({ name: "paseo-secrets", version: "0.4.3" });
+  const mcp = new McpServer({ name: "paseo-secrets", version: "0.6.0" });
   mcp.registerTool(
     "request_secrets",
     {

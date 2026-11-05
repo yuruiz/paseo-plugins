@@ -10,6 +10,9 @@ import {
   listConnectVaults,
   listConnectItems,
   shareConnectItem,
+  beginConnectConfiguration,
+  setConnectPlaintextEnabled,
+  connectConfigurationSchema,
 } from "./shared/onepassword.js";
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
 import { randomUUID } from "node:crypto";
@@ -46,6 +49,7 @@ export default function contribute(server: PluginServerContext) {
   let api: PluginHandlerContext["paseo"] | undefined;
   const submissions = new SealedSubmissions<z.infer<typeof submissionResultSchema>>();
   const probes = new SealedSubmissions<{ bytes: number }>();
+  const connectSubmissions = new SealedSubmissions<Promise<{ configured: true }>>();
   const notifications = new SecretNotifications({
     async idle(id) {
       if (!api) return false;
@@ -61,6 +65,7 @@ export default function contribute(server: PluginServerContext) {
   const sweep = setInterval(() => {
     submissions.prune();
     probes.prune();
+    connectSubmissions.prune();
     void notifications.flush();
   }, 5000);
   sweep.unref();
@@ -106,9 +111,20 @@ export default function contribute(server: PluginServerContext) {
   });
   // Startup failures surface through RPC; no unhandled rejection or credential-bearing logging.
   void runtime.catch(() => undefined);
-  server.handle(configureConnect, async (input) => {
-    await (await runtime).connect.configure(input);
-    return { configured: true as const };
+  server.handle(beginConnectConfiguration, () => connectSubmissions.begin("connect-configuration"));
+  server.handle(configureConnect, async ({ ticketId, envelope }) => {
+    const { connect } = await runtime;
+    return connectSubmissions.complete(ticketId, "connect-configuration", envelope, (bytes) => {
+      const input = connectConfigurationSchema.safeParse(
+        JSON.parse(new TextDecoder().decode(bytes)),
+      );
+      if (!input.success) throw new SecretsError("invalid");
+      return connect.configure(input.data).then(() => ({ configured: true as const }));
+    });
+  });
+  server.handle(setConnectPlaintextEnabled, async ({ enabled }) => {
+    await (await runtime).connect.setPlaintextEnabled(enabled);
+    return { enabled };
   });
   server.handle(deleteConnect, async () => {
     await (await runtime).connect.remove();
@@ -135,8 +151,19 @@ export default function contribute(server: PluginServerContext) {
     await agent.refresh();
     if (!agent.cwd || agent.archivedAt) throw new Error("Select an active agent before sharing.");
     const { connect, broker } = await runtime;
-    return sendConnectItem(connect, broker, { ...input, agentId, cwd: agent.cwd }, (message) =>
-      agent.send(message),
+    return sendConnectItem(
+      connect,
+      broker,
+      { ...input, agentId, cwd: agent.cwd },
+      async (message, grant) => {
+        api = paseo;
+        notifications.enqueue(grant.id, {
+          agentId,
+          expiresAt: grant.expiresAt,
+          message: () =>
+            broker.list(agentId).some((entry) => entry.id === grant.id) ? message : null,
+        });
+      },
     );
   });
   server.handle(mcpConnection, async (_, { paseo }) => {
@@ -321,6 +348,7 @@ export default function contribute(server: PluginServerContext) {
     notifications.close();
     submissions.close();
     probes.close();
+    connectSubmissions.close();
     const active = await runtime.catch(() => null);
     await active?.close();
   };

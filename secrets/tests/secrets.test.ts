@@ -624,6 +624,21 @@ test("Connect tools perform list, read, create and replace through HTTP and disc
         response.writeHead(403).end(JSON.stringify({ message: "sensitive-upstream-error" }));
       } else if (request.url === "/v1/vaults/redirect/items") {
         response.writeHead(302, { Location: "/v1/vaults" }).end();
+      } else if (request.method === "GET" && request.url === "/v1/vaults") {
+        response.end(
+          JSON.stringify([{ id: "vault", name: "Test", fields: [{ value: "fixture-value" }] }]),
+        );
+      } else if (request.method === "GET" && request.url?.startsWith("/v1/vaults/vault/items?")) {
+        response.end(
+          JSON.stringify([
+            {
+              id: "item",
+              title: "Database",
+              category: "LOGIN",
+              fields: [{ value: "fixture-value" }],
+            },
+          ]),
+        );
       } else {
         response.end(JSON.stringify({ id: "item", fields: [{ value: "fixture-value" }] }));
       }
@@ -649,6 +664,7 @@ test("Connect tools perform list, read, create and replace through HTTP and disc
       configured: true,
       proxyUrl: null,
       enabled: true,
+      plaintextEnabled: false,
       error: null,
       url: `http://127.0.0.1:${address.port}/`,
     });
@@ -657,6 +673,13 @@ test("Connect tools perform list, read, create and replace through HTTP and disc
       name: "onepassword_list_items",
       arguments: { vaultId: "vault", filter: 'title eq "Database"' },
     });
+    const blocked = await client.callTool({
+      name: "onepassword_get_item",
+      arguments: { vaultId: "vault", itemId: "item" },
+    });
+    expect(blocked.isError).toBe(true);
+    expect(received).toHaveLength(2);
+    await runtime.connect.setPlaintextEnabled(true);
     const read = await client.callTool({
       name: "onepassword_get_item",
       arguments: { vaultId: "vault", itemId: "item" },
@@ -731,6 +754,7 @@ test("Connect tools perform list, read, create and replace through HTTP and disc
       configured: false,
       proxyUrl: null,
       enabled: false,
+      plaintextEnabled: false,
       url: null,
       error: null,
     });
@@ -771,6 +795,7 @@ test("Connect disconnect cancels an outstanding HTTP request and invalid configu
       configured: true,
       proxyUrl: null,
       enabled: true,
+      plaintextEnabled: false,
       url,
       error: null,
     });
@@ -783,6 +808,7 @@ test("Connect disconnect cancels an outstanding HTTP request and invalid configu
       configured: false,
       proxyUrl: null,
       enabled: false,
+      plaintextEnabled: false,
       url: null,
       error: null,
     });
@@ -810,6 +836,7 @@ test("Connect persists credentials privately across restart, disable/enable and 
       version: 1,
       proxyUrl: null,
       enabled: true,
+      plaintextEnabled: false,
       url,
       token: "persisted-test-token",
     });
@@ -817,12 +844,14 @@ test("Connect persists credentials privately across restart, disable/enable and 
       configured: true,
       proxyUrl: null,
       enabled: true,
+      plaintextEnabled: false,
       url,
       error: null,
     });
     await runtime.close();
     const legacy = JSON.parse(await readFile(file, "utf8"));
     delete legacy.proxyUrl;
+    delete legacy.plaintextEnabled;
     await writeFile(file, JSON.stringify(legacy));
     await chmod(directory, 0o755);
     await chmod(file, 0o644);
@@ -833,6 +862,7 @@ test("Connect persists credentials privately across restart, disable/enable and 
       configured: true,
       proxyUrl: null,
       enabled: true,
+      plaintextEnabled: false,
       url,
       error: null,
     });
@@ -843,6 +873,7 @@ test("Connect persists credentials privately across restart, disable/enable and 
       configured: true,
       proxyUrl: null,
       enabled: false,
+      plaintextEnabled: false,
       url,
       error: null,
     });
@@ -854,6 +885,7 @@ test("Connect persists credentials privately across restart, disable/enable and 
       configured: true,
       proxyUrl: null,
       enabled: true,
+      plaintextEnabled: false,
       url,
       error: null,
     });
@@ -865,6 +897,7 @@ test("Connect persists credentials privately across restart, disable/enable and 
       configured: false,
       proxyUrl: null,
       enabled: false,
+      plaintextEnabled: false,
       url: null,
       error: null,
     });
@@ -888,6 +921,7 @@ test("Connect preserves corrupt files for recovery and never exposes stored cred
       configured: false,
       proxyUrl: null,
       enabled: false,
+      plaintextEnabled: false,
       url: null,
       error: "Stored Connect configuration could not be read. Replace or delete it.",
     });
@@ -900,6 +934,7 @@ test("Connect preserves corrupt files for recovery and never exposes stored cred
       configured: true,
       proxyUrl: null,
       enabled: true,
+      plaintextEnabled: false,
       url: "https://connect.example.com",
       error: null,
     });
@@ -914,6 +949,7 @@ test("Connect preserves corrupt files for recovery and never exposes stored cred
       configured: true,
       proxyUrl: null,
       enabled: true,
+      plaintextEnabled: false,
       url: "https://connect.example.com",
       error: null,
     });
@@ -925,6 +961,7 @@ test("Connect preserves corrupt files for recovery and never exposes stored cred
       version: 1,
       proxyUrl: null,
       enabled: false,
+      plaintextEnabled: false,
       url: "https://connect.example.com",
       token: "private-replacement-value",
     });
@@ -952,6 +989,7 @@ test("Connect serializes saves and waits for the last accepted write during shut
       configured: true,
       proxyUrl: null,
       enabled: false,
+      plaintextEnabled: false,
       url: "https://second.example.com",
       error: null,
     });
@@ -996,6 +1034,7 @@ test("Connect connection tests use saved credentials without enabling access or 
       configured: true,
       proxyUrl: null,
       enabled: false,
+      plaintextEnabled: false,
       url,
       error: null,
     });

@@ -158,6 +158,21 @@ test("native tools use caller identity and no private input reaches RPC results,
     const exposed = JSON.stringify([captured, logged]);
     for (const value of [canary, canary.slice(0, 18), Buffer.from(canary).toString("base64"), data])
       expect(exposed).not.toContain(value);
+    const setupToken = "canary-connect-setup-85734";
+    const setupTicket = await rpc("secrets.connect.configure.begin", {});
+    const setupEnvelope = sealValue(setupTicket as never, {
+      url: "http://127.0.0.1:1",
+      token: setupToken,
+      proxyUrl: null,
+    });
+    const setupInput = { ticketId: setupTicket.id, envelope: setupEnvelope };
+    expect(await rpc("secrets.connect.configure.sealed", setupInput)).toEqual({ configured: true });
+    expect((await rpc("secrets.connect.status", {})).plaintextEnabled).toBe(false);
+    await rpc("secrets.connect.plaintext.enabled", { enabled: true });
+    expect(await rpc("secrets.connect.configure.sealed", setupInput)).toEqual({ configured: true });
+    expect((await rpc("secrets.connect.status", {})).plaintextEnabled).toBe(true);
+    expect(JSON.stringify([captured, logged])).not.toContain(setupToken);
+    expect(handlers.has("secrets.connect.configure")).toBe(false);
     expect(handlers.has("secrets.submit")).toBe(false);
     expect(handlers.has("secrets.request.submit")).toBe(false);
   } finally {

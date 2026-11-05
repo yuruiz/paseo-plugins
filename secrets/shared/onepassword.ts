@@ -1,6 +1,7 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 import { grantSchema } from "./contracts.js";
+import { envelopeSchema, ticketSchema } from "./sealing.js";
 
 export const connectProxySchema = z
   .string()
@@ -43,9 +44,19 @@ export const connectConfigurationSchema = z.object({
     .refine((value) => !/[\r\n]/.test(value)),
 });
 export const configureConnect = defineRpc({
-  name: "secrets.connect.configure",
-  input: connectConfigurationSchema,
+  name: "secrets.connect.configure.sealed",
+  input: z.object({ ticketId: z.string().uuid(), envelope: envelopeSchema }),
   output: z.object({ configured: z.literal(true) }),
+});
+export const beginConnectConfiguration = defineRpc({
+  name: "secrets.connect.configure.begin",
+  input: z.object({}),
+  output: ticketSchema,
+});
+export const setConnectPlaintextEnabled = defineRpc({
+  name: "secrets.connect.plaintext.enabled",
+  input: z.object({ enabled: z.boolean() }),
+  output: z.object({ enabled: z.boolean() }),
 });
 export const setConnectProxy = defineRpc({
   name: "secrets.connect.proxy",
@@ -74,6 +85,7 @@ export const connectStatus = defineRpc({
     configured: z.boolean(),
     proxyUrl: connectProxySchema.default(null),
     enabled: z.boolean(),
+    plaintextEnabled: z.boolean(),
     url: z.string().nullable(),
     error: z.string().nullable(),
   }),

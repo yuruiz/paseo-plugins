@@ -12,7 +12,10 @@ import {
   setConnectProxy,
   deleteConnect,
   testConnect,
+  beginConnectConfiguration,
+  setConnectPlaintextEnabled,
 } from "../shared/onepassword.js";
+import { sealValue } from "../shared/sealing.js";
 import { QuestionButton, useQuestionStyles } from "./question-ui.js";
 
 interface FormState {
@@ -21,6 +24,9 @@ interface FormState {
   proxyUrl: string;
   status: "idle" | "pending" | "saved" | "error";
   message: string;
+}
+function accessLabel(enabled: boolean) {
+  return enabled ? "Enabled" : "Disabled";
 }
 type Action =
   | { type: "url"; value: string }
@@ -67,6 +73,8 @@ interface ConnectFormProps extends PluginSurfaceProps {
 
 function ConnectForm({ host, theme, layout, saved, queryKey }: ConnectFormProps) {
   const configure = useRpc(configureConnect);
+  const beginConfiguration = useRpc(beginConnectConfiguration);
+  const setPlaintext = useRpc(setConnectPlaintextEnabled);
   const setEnabled = useRpc(setConnectEnabled);
   const setProxy = useRpc(setConnectProxy);
   const deleteConfiguration = useRpc(deleteConnect);
@@ -106,10 +114,13 @@ function ConnectForm({ host, theme, layout, saved, queryKey }: ConnectFormProps)
       proxyUrl: form.proxyUrl.trim() || null,
     };
     run(async () => {
-      await configure(input);
-      return "Configuration saved. Connect access is enabled.";
+      const ticket = await beginConfiguration({});
+      const envelope = sealValue(ticket, input);
+      input.token = "";
+      await configure({ ticketId: ticket.id, envelope });
+      return "Configuration saved. Grant sharing is enabled; plaintext access is disabled.";
     }, "Could not save Connect. Check the URL, host connection and storage permissions; re-enter the token to retry.");
-  }, [configure, form.url, form.token, form.proxyUrl, run]);
+  }, [configure, beginConfiguration, form.url, form.token, form.proxyUrl, run]);
   const saveProxy = useCallback(() => {
     run(async () => {
       await setProxy({ proxyUrl: form.proxyUrl.trim() || null });
@@ -130,6 +141,14 @@ function ConnectForm({ host, theme, layout, saved, queryKey }: ConnectFormProps)
       return "Saved Connect configuration deleted.";
     }, "Could not delete Connect configuration. Check the host connection and storage permissions, then retry.");
   }, [deleteConfiguration, run]);
+  const togglePlaintext = useCallback(() => {
+    run(async () => {
+      await setPlaintext({ enabled: !saved.plaintextEnabled });
+      return saved.plaintextEnabled
+        ? "Plaintext access disabled."
+        : "Plaintext access enabled. Item reads and write results may enter agent context.";
+    }, "Could not change plaintext access. Check the host connection and storage permissions.");
+  }, [run, saved.plaintextEnabled, setPlaintext]);
   const test = useCallback(() => {
     run(async () => {
       const result = await testConnection({});
@@ -139,17 +158,19 @@ function ConnectForm({ host, theme, layout, saved, queryKey }: ConnectFormProps)
   const pending = form.status === "pending";
   const configuredActionDisabled = pending || !saved.configured;
   const canDelete = saved.configured || saved.error !== null;
-  const access = saved.enabled ? "Enabled" : "Disabled";
+  const access = accessLabel(saved.enabled);
   return (
     <View style={styles.body}>
       <View style={styles.card}>
         <Text style={styles.muted}>
-          Connect lets agents on this host list, read, create and replace items allowed by the
-          token. Read results include secret values in agent context.
+          Share items as one-use grants without exposing their values to the agent. Listing returns
+          metadata only. Plaintext access separately permits full item reads and writes whose
+          results include secret values in agent context.
         </Text>
         <Text style={styles.text}>
           {saved.configured ? `${access}: ${saved.url}` : "Not configured"}
         </Text>
+        <Text style={styles.text}>Plaintext access: {accessLabel(saved.plaintextEnabled)}</Text>
         {saved.error ? (
           <Text accessibilityRole="alert" style={styles.error}>
             {saved.error}
@@ -221,6 +242,16 @@ function ConnectForm({ host, theme, layout, saved, queryKey }: ConnectFormProps)
             theme={theme}
             label={saved.enabled ? "Disable access" : "Enable access"}
             onPress={toggle}
+            disabled={configuredActionDisabled}
+          />
+          <QuestionButton
+            theme={theme}
+            label={
+              saved.plaintextEnabled
+                ? "Disable plaintext access"
+                : "Allow plaintext reads and writes"
+            }
+            onPress={togglePlaintext}
             disabled={configuredActionDisabled}
           />
           <QuestionButton

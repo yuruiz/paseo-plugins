@@ -18,6 +18,7 @@ import { requestConnect } from "./connect-http.js";
 const storedConfigurationSchema = connectConfigurationSchema.extend({
   version: z.literal(1),
   enabled: z.boolean(),
+  plaintextEnabled: z.boolean().default(false),
 });
 type StoredConfiguration = z.infer<typeof storedConfigurationSchema>;
 
@@ -96,7 +97,9 @@ export class OnePasswordConnect {
   configure(input: z.input<typeof connectConfigurationSchema>) {
     const parsed = connectConfigurationSchema.safeParse(input);
     if (!parsed.success) return Promise.reject(new ConnectError("Invalid Connect URL or token."));
-    return this.enqueue(() => this.persist({ ...parsed.data, version: 1, enabled: true }));
+    return this.enqueue(() =>
+      this.persist({ ...parsed.data, version: 1, enabled: true, plaintextEnabled: false }),
+    );
   }
 
   setProxy(proxyUrl: z.infer<typeof connectProxySchema>) {
@@ -112,6 +115,13 @@ export class OnePasswordConnect {
     return this.enqueue(async () => {
       if (!this.configuration) throw new ConnectError("Configure 1Password Connect first.");
       await this.persist({ ...this.configuration, enabled });
+    });
+  }
+
+  setPlaintextEnabled(plaintextEnabled: boolean) {
+    return this.enqueue(async () => {
+      if (!this.configuration) throw new ConnectError("Configure 1Password Connect first.");
+      await this.persist({ ...this.configuration, plaintextEnabled });
     });
   }
 
@@ -142,6 +152,7 @@ export class OnePasswordConnect {
       configured: this.configuration !== null,
       proxyUrl: this.configuration?.proxyUrl ?? null,
       enabled: this.configuration?.enabled ?? false,
+      plaintextEnabled: this.configuration?.plaintextEnabled ?? false,
       url: this.configuration?.url ?? null,
       error: this.loadError,
     };
@@ -183,6 +194,27 @@ export class OnePasswordConnect {
       throw new ConnectError("Configure 1Password Connect in Secrets first.");
     if (!configuration.enabled) throw new ConnectError("1Password Connect access is disabled.");
     return this.perform(configuration, method, route, body, signal);
+  }
+
+  async requestForAgent(
+    method: "GET" | "POST" | "PUT",
+    route: string,
+    body: unknown,
+    signal: AbortSignal,
+  ) {
+    const vaults = method === "GET" && route === "vaults";
+    const items = method === "GET" && /^vaults\/[a-zA-Z0-9_-]+\/items(?:\?.*)?$/.test(route);
+    if (!vaults && !items && !this.configuration?.plaintextEnabled)
+      throw new ConnectError(
+        "Plaintext access is disabled. Share an item as a one-use grant, or enable plaintext access in Secrets settings.",
+      );
+    const result = await this.request(method, route, body, signal);
+    if (!vaults && !items) return result;
+    const parsed = vaults
+      ? z.array(connectVaultSchema).safeParse(result)
+      : z.array(connectItemSummarySchema).safeParse(result);
+    if (!parsed.success) throw new ConnectError("Connect returned invalid metadata.");
+    return parsed.data;
   }
 
   private async perform(
@@ -264,7 +296,7 @@ export function connectTools(connect: OnePasswordConnect) {
     signal: AbortSignal,
   ) {
     try {
-      const result = await connect.request(method, route, body, signal);
+      const result = await connect.requestForAgent(method, route, body, signal);
       return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
     } catch (error) {
       const message =
