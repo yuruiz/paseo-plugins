@@ -34,6 +34,7 @@ test("native tools use caller identity and no private input reaches RPC results,
   };
   const agentId = "c7e7884f-4b52-459c-b723-8566284c6349";
   const otherId = "e0b36cd2-8c99-4fae-8c1e-1b19cc5f9883";
+  let idle = true;
   const paseo = {
     agents: {
       ref(id: string) {
@@ -41,7 +42,7 @@ test("native tools use caller identity and no private input reaches RPC results,
           id,
           cwd: directory,
           archivedAt: null,
-          status: "idle",
+          status: idle ? "idle" : "running",
           refresh: async () => undefined,
           send: async (text: string) => {
             captured.push({ message: text });
@@ -125,7 +126,22 @@ test("native tools use caller identity and no private input reaches RPC results,
     expect(
       (await tool("read_secret_output", { outputId: output.outputId })).structuredContent,
     ).toEqual({ status: "awaiting_review" });
-    await rpc("secrets.output.release", { agentId, id: output.outputId, text: "Safe result" });
+    idle = false;
+    expect(
+      await rpc("secrets.output.release", { agentId, id: output.outputId, text: "Safe result" }),
+    ).toEqual({ released: true, queued: true });
+    const notice = {
+      message: `Reviewed output is ready. Use read_secret_output with outputId "${output.outputId}".`,
+    };
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(captured).not.toContainEqual(notice);
+    idle = true;
+    await hooks.get("agent.turn.after")!({} as never, context as never);
+    await vi.waitFor(() => expect(captured).toContainEqual(notice));
+    await rpc("secrets.output.notify", { agentId, id: output.outputId });
+    expect(captured.filter((item) => JSON.stringify(item) === JSON.stringify(notice))).toHaveLength(
+      1,
+    );
     expect(
       (await tool("read_secret_output", { outputId: output.outputId })).structuredContent,
     ).toEqual({ status: "released", text: "Safe result" });
