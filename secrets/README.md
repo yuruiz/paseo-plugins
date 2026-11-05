@@ -24,7 +24,7 @@ The existing loopback MCP endpoint remains for previously configured sessions an
 
 For supported providers, the plugin appends `127.0.0.1`, `localhost` and `::1` to both `NO_PROXY` and `no_proxy` when an interactive session opens (create, resume, refresh or import). Existing exclusions from the inherited, provider and session environments are preserved. This keeps the agent’s local MCP connection out of HTTP/SOCKS proxies while Connect’s outbound requests continue using the saved Connect proxy. Running sessions need a reload to receive the updated environment.
 
-For an existing Codex setup, register the local endpoint once using `codex mcp add paseo-secrets --url http://127.0.0.1:PORT/mcp`, replacing `PORT` with the saved port. Then reload the agent session. Clients with a tool timeout below two minutes may cancel execution earlier; increase that client's MCP tool timeout when longer commands are needed.
+For legacy Codex MCP clients, register the local endpoint once using `codex mcp add paseo-secrets --url http://127.0.0.1:PORT/mcp`, replacing `PORT` with the saved port. Then reload the agent session. Clients with a tool timeout below two minutes may cancel execution earlier; increase that client's MCP tool timeout when longer commands are needed.
 
 Once admitted, the grant is consumed before spawning, including when the executable cannot start. Capacity rejections leave it pending. Revoking a pending grant does not stop a command that has already claimed it. For an explicit shell command, pass `sh` with `args: ["-c", "…"]`; do not expand secret values in the agent's own shell.
 
@@ -54,7 +54,7 @@ The daemon stores URL, token, proxy URL and enabled state in `$PASEO_HOME/plugin
 
 The file is plaintext: the daemon user, same-user agents, administrators and backups can read it. It survives plugin removal because it lives outside the plugin source directory; use **Delete saved configuration** before uninstalling if you want it removed. A process crash during saving can leave a private temporary file in the same directory. Deleting a configuration does not revoke the token in 1Password or erase backups. Use the 1Password administration controls to revoke a token.
 
-Agents connected to this host's Secrets MCP can use:
+Native tools and the legacy MCP endpoint provide the following Connect operations:
 
 | Tool                       | Operation                                                     |
 | -------------------------- | ------------------------------------------------------------- |
