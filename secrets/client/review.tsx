@@ -15,8 +15,6 @@ import {
   readSecretOutput,
   releaseSecretOutput,
   discardSecretOutput,
-  grantNotification,
-  type Grant,
 } from "../shared/contracts.js";
 import { SecretsForm } from "./form-view.js";
 
@@ -28,7 +26,6 @@ export function RequestContent(props: PluginHostProps & { agentId: string; reque
   const { agentId, requestId, theme, host } = props;
   const get = useRpc(getSecretRequest);
   const decline = useRpc(declineSecretRequest);
-  const paseo = usePaseo();
   const [failed, setFailed] = useState(false);
   const query = useQuery({
     queryKey: ["secret-request", host.id, agentId, requestId],
@@ -40,21 +37,10 @@ export function RequestContent(props: PluginHostProps & { agentId: string; reque
   const refresh = useCallback(() => {
     void refetch();
   }, [refetch]);
-  const saved = useCallback(
-    (grant: Grant | null, skipped: string[] = []) => {
-      setFailed(false);
-      refresh();
-      void paseo.agents
-        .ref(agentId)
-        .send(
-          grant
-            ? grantNotification(grant)
-            : `The user skipped all requested private inputs (${skipped.join(", ")}). No secrets grant was created.`,
-        )
-        .catch(() => setFailed(true));
-    },
-    [agentId, paseo, refresh],
-  );
+  const saved = useCallback(() => {
+    setFailed(false);
+    refresh();
+  }, [refresh]);
   const cancel = useCallback(() => {
     setFailed(false);
     void decline({ agentId, id: requestId })
@@ -63,10 +49,6 @@ export function RequestContent(props: PluginHostProps & { agentId: string; reque
   }, [decline, agentId, requestId, refresh]);
   const styles = useQuestionStyles(theme, props.layout.compact);
   const request = query.data;
-  const resend = useCallback(() => {
-    if (request && (request.status === "fulfilled" || request.status === "skipped"))
-      saved(request.grant, request.skipped);
-  }, [request, saved]);
   return (
     <View testID="secrets-request">
       {request?.status === "pending" ? (
@@ -85,11 +67,8 @@ export function RequestContent(props: PluginHostProps & { agentId: string; reque
       {failed ? (
         <View style={styles.body}>
           <Text accessibilityRole="alert" style={styles.error}>
-            Action failed. Retry sending if your secrets were submitted.
+            Action failed. Refresh the request and try again.
           </Text>
-          {request && (request.status === "fulfilled" || request.status === "skipped") ? (
-            <QuestionButton theme={theme} label="Send to agent" onPress={resend} />
-          ) : null}
         </View>
       ) : null}
     </View>

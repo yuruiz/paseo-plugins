@@ -13,6 +13,10 @@ import {
 } from "./shared/onepassword.js";
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
 import { randomUUID } from "node:crypto";
+import { SealedSubmissions } from "./server/submissions.js";
+import { SecretNotifications } from "./server/notifications.js";
+import { SecretsError } from "./server/errors.js";
+import { MAX_SEALED_PLAINTEXT } from "./shared/sealing.js";
 import {
   getSecretRequest,
   declineSecretRequest,
@@ -23,8 +27,14 @@ import {
   mcpConnection,
   openSecrets,
   revokeSecrets,
-  submitSecrets,
-  submitSecretRequest,
+  beginSecretSubmission,
+  completeSecretSubmission,
+  submissionPayloadSchema,
+  submissionResultSchema,
+  notifySecretGrant,
+  grantNotification,
+  beginSecretSelfTest,
+  completeSecretSelfTest,
 } from "./shared/contracts.js";
 import { startRuntime } from "./server/runtime.js";
 import { resolveStateDirectory } from "./server/state-directory.js";
@@ -32,6 +42,26 @@ import { sendConnectItem } from "./server/connect-share.js";
 
 export default function contribute(server: PluginServerContext) {
   let api: PluginHandlerContext["paseo"] | undefined;
+  const submissions = new SealedSubmissions<z.infer<typeof submissionResultSchema>>();
+  const probes = new SealedSubmissions<{ bytes: number }>();
+  const notifications = new SecretNotifications({
+    async idle(id) {
+      if (!api) return false;
+      const agent = api.agents.ref(id);
+      await agent.refresh();
+      return !agent.archivedAt && agent.status === "idle";
+    },
+    async send(id, message) {
+      if (!api) throw new Error("Paseo session unavailable");
+      await api.agents.ref(id).send(message);
+    },
+  });
+  const sweep = setInterval(() => {
+    submissions.prune();
+    probes.prune();
+    void notifications.flush();
+  }, 5000);
+  sweep.unref();
   const runtime = startRuntime({
     stateDirectory: resolveStateDirectory(),
     async onRequest(input, requests) {
@@ -67,6 +97,10 @@ export default function contribute(server: PluginServerContext) {
   });
   server.on("agent.turn_started", (_, { paseo }) => {
     api = paseo;
+  });
+  server.on("agent.turn_ended", (_, { paseo }) => {
+    api = paseo;
+    void notifications.flush();
   });
   // Startup failures surface through RPC; no unhandled rejection or credential-bearing logging.
   void runtime.catch(() => undefined);
@@ -146,33 +180,80 @@ export default function contribute(server: PluginServerContext) {
     });
     return { opened: true };
   });
-  server.handle(submitSecrets, async ({ agentId, secrets, images, requestId }, { paseo }) => {
+  async function target(
+    agentId: string,
+    requestId: string | undefined,
+    paseo: PluginHandlerContext["paseo"],
+  ) {
     api = paseo;
     const agent = paseo.agents.ref(agentId);
     await agent.refresh();
-    const cwd = agent.cwd;
-    if (!cwd || agent.archivedAt) throw new Error("Select an active agent before adding secrets.");
-    const { broker, requests } = await runtime;
-    const create = () => broker.submit({ agentId, cwd, secrets, images });
-    const grant = requestId
-      ? requests.fulfill(agentId, requestId, { secrets, images }, create)
-      : create();
-    return grant;
-  });
+    if (!agent.cwd || agent.archivedAt) throw new SecretsError("unavailable");
+    const { requests } = await runtime;
+    const request = requestId ? requests.get(agentId, requestId) : null;
+    return {
+      cwd: agent.cwd,
+      scope: JSON.stringify([agentId, requestId ?? null, request?.fields ?? null]),
+    };
+  }
+  server.handle(beginSecretSubmission, async ({ agentId, requestId }, { paseo }) =>
+    submissions.begin((await target(agentId, requestId, paseo)).scope),
+  );
   server.handle(
-    submitSecretRequest,
-    async ({ agentId, requestId, secrets, images, skipped }, { paseo }) => {
-      api = paseo;
-      const agent = paseo.agents.ref(agentId);
-      await agent.refresh();
-      const cwd = agent.cwd;
-      if (!cwd || agent.archivedAt)
-        throw new Error("Select an active agent before adding secrets.");
+    completeSecretSubmission,
+    async ({ agentId, requestId, ticketId, envelope }, { paseo }) => {
+      const { cwd, scope } = await target(agentId, requestId, paseo);
       const { broker, requests } = await runtime;
-      return requests.submit(agentId, requestId, { secrets, images }, skipped, () =>
-        broker.submit({ agentId, cwd, secrets, images }),
-      );
+      const result = submissions.complete(ticketId, scope, envelope, (bytes) => {
+        const parsed = submissionPayloadSchema.safeParse(
+          JSON.parse(new TextDecoder().decode(bytes)),
+        );
+        if (!parsed.success) throw new SecretsError("invalid");
+        const { secrets, images, skipped } = parsed.data;
+        const create = () => broker.submit({ agentId, cwd, secrets, images });
+        if (requestId)
+          return requests.submit(agentId, requestId, { secrets, images }, skipped, create);
+        if (skipped.length) throw new SecretsError("invalid");
+        return { grant: create(), skipped: [] };
+      });
+      if (requestId) {
+        const request = requests.get(agentId, requestId);
+        notifications.enqueue(requestId, {
+          agentId,
+          expiresAt: result.grant?.expiresAt ?? request.expiresAt,
+          message: () => {
+            const grant = result.grant;
+            if (!grant)
+              return "The user skipped all requested private inputs. No secrets grant was created.";
+            return broker.list(agentId).some((entry) => entry.id === grant.id)
+              ? grantNotification(grant)
+              : null;
+          },
+        });
+      }
+      return result;
     },
+  );
+  server.handle(notifySecretGrant, async ({ agentId, id }, { paseo }) => {
+    api = paseo;
+    const { broker } = await runtime;
+    const grant = broker.list(agentId).find((entry) => entry.id === id);
+    if (!grant) throw new SecretsError("unavailable");
+    notifications.enqueue(id, {
+      agentId,
+      expiresAt: grant.expiresAt,
+      message: () =>
+        broker.list(agentId).some((entry) => entry.id === id) ? grantNotification(grant) : null,
+    });
+    return { queued: true as const };
+  });
+  server.handle(beginSecretSelfTest, () => probes.begin("selftest"));
+  server.handle(completeSecretSelfTest, ({ ticketId, envelope }) =>
+    probes.complete(ticketId, "selftest", envelope, (bytes) => {
+      if (bytes.length !== MAX_SEALED_PLAINTEXT || bytes.some((byte) => byte !== 97))
+        throw new SecretsError("invalid");
+      return { bytes: bytes.length };
+    }),
   );
   server.handle(listSecrets, async ({ agentId }, { paseo }) => {
     api = paseo;
@@ -204,12 +285,17 @@ export default function contribute(server: PluginServerContext) {
     discarded: (await runtime).broker.outputs.discard(agentId, id),
   }));
   server.on("agent.archived", async ({ agent }) => {
+    notifications.removeAgent(agent.id);
     const { broker } = await runtime;
     broker.revokeAgent(agent.id);
     broker.outputs.removeAgent(agent.id);
     (await runtime).requests.removeAgent(agent.id);
   });
   return async () => {
+    clearInterval(sweep);
+    notifications.close();
+    submissions.close();
+    probes.close();
     const active = await runtime.catch(() => null);
     await active?.close();
   };

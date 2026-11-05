@@ -4,13 +4,14 @@ import { Icon, TextInput } from "@getpaseo/plugin/client/react-native";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Pressable, Text, View } from "react-native";
 import {
-  submitSecrets,
-  submitSecretRequest,
+  beginSecretSubmission,
+  completeSecretSubmission,
   type Grant,
   type SecretRequest,
 } from "../shared/contracts.js";
 import { canPickImage, pickImage } from "./web.js";
 import { createSecretForm, isSecretFieldReady, type SecretField, type SecretForm } from "./form.js";
+import { createSealedSender } from "./submission.js";
 import { QuestionButton, useQuestionStyles } from "./question-ui.js";
 
 interface FormProps extends PluginHostProps {
@@ -21,28 +22,43 @@ interface FormProps extends PluginHostProps {
 }
 
 export function SecretsForm({ agentId, theme, layout, onSaved, request, onDecline }: FormProps) {
-  const submit = useRpc(submitSecrets);
-  const submitRequest = useRpc(submitSecretRequest);
+  const begin = useRpc(beginSecretSubmission);
+  const completeSubmission = useRpc(completeSecretSubmission);
+  const [sender] = useState(() =>
+    createSealedSender(
+      () => begin({ agentId, requestId: request?.id }),
+      (input) => completeSubmission({ ...input, agentId, requestId: request?.id }),
+    ),
+  );
   const [form] = useState(() =>
-    createSecretForm(async (secrets, images, skipped) => {
-      if (request) {
-        const result = await submitRequest({
-          agentId,
-          requestId: request.id,
-          secrets,
-          images,
-          skipped,
-        });
+    createSecretForm(
+      async (secrets, images, skipped) => {
+        const result = await sender.submit({ secrets, images, skipped });
         onSaved(result.grant, result.skipped);
-      } else {
-        onSaved(await submit({ agentId, secrets, images }));
-      }
-    }, request?.fields),
+      },
+      request?.fields,
+      {
+        available: sender.hasPending,
+        async send() {
+          const result = await sender.retry();
+          onSaved(result.grant, result.skipped);
+        },
+      },
+    ),
   );
   const state = useSyncExternalStore(form.subscribe, form.getState);
-  useEffect(() => () => form.close(), [form]);
+  useEffect(
+    () => () => {
+      form.close();
+      sender.close();
+    },
+    [form, sender],
+  );
   const styles = useQuestionStyles(theme, layout.compact);
-  const pending = state.status === "saving";
+  const pending = state.status === "saving" || state.retryable;
+  const retrySubmission = useCallback(() => {
+    void form.retry();
+  }, [form]);
   const active = state.fields[state.activeIndex];
   const last = !request || state.activeIndex === state.fields.length - 1;
   const complete = state.fields.every(isSecretFieldReady);
@@ -125,6 +141,14 @@ export function SecretsForm({ agentId, theme, layout, onSaved, request, onDeclin
             <Text accessibilityRole="alert" style={styles.error}>
               {state.error}
             </Text>
+          ) : null}
+          {state.retryable ? (
+            <QuestionButton
+              theme={theme}
+              label="Retry encrypted submission"
+              onPress={retrySubmission}
+              disabled={state.status === "saving"}
+            />
           ) : null}
           <View style={styles.actions}>
             {onDecline ? (

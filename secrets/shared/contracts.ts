@@ -1,5 +1,6 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
+import { envelopeSchema, ticketSchema } from "./sealing.js";
 
 export const nameSchema = z.string().regex(/^[A-Z_][A-Z0-9_]{0,127}$/);
 export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -137,32 +138,45 @@ export const openSecrets = defineRpc({
   input: z.object({ agentId: z.string().min(1) }),
   output: z.object({ opened: z.boolean() }),
 });
-export const submitSecrets = defineRpc({
-  name: "secrets.submit",
-  input: z
-    .object({
-      agentId: z.string().min(1),
-      requestId: z.string().uuid().optional(),
-      ...bundleFields,
-    })
-    .refine(validBundle),
-  output: grantSchema,
+export const submissionPayloadSchema = z
+  .object({
+    ...bundleFields,
+    skipped: z.array(nameSchema).max(32).default([]),
+  })
+  .refine(
+    (bundle) =>
+      validBundle(bundle) ||
+      (bundle.secrets.length === 0 && bundle.images.length === 0 && bundle.skipped.length > 0),
+  );
+const submissionTarget = { agentId: z.string().min(1), requestId: z.string().uuid().optional() };
+export const submissionResultSchema = z.object({
+  grant: grantSchema.nullable(),
+  skipped: z.array(nameSchema),
 });
-export const submitSecretRequest = defineRpc({
-  name: "secrets.request.submit",
-  input: z
-    .object({
-      agentId: z.string(),
-      requestId: z.string().uuid(),
-      ...bundleFields,
-      skipped: z.array(nameSchema).max(32).default([]),
-    })
-    .refine(
-      (bundle) =>
-        validBundle(bundle) ||
-        (bundle.secrets.length === 0 && bundle.images.length === 0 && bundle.skipped.length > 0),
-    ),
-  output: z.object({ grant: grantSchema.nullable(), skipped: z.array(nameSchema) }),
+export const beginSecretSubmission = defineRpc({
+  name: "secrets.submission.begin",
+  input: z.object(submissionTarget),
+  output: ticketSchema,
+});
+export const completeSecretSubmission = defineRpc({
+  name: "secrets.submission.complete",
+  input: z.object({ ...submissionTarget, ticketId: z.string().uuid(), envelope: envelopeSchema }),
+  output: submissionResultSchema,
+});
+export const notifySecretGrant = defineRpc({
+  name: "secrets.grant.notify",
+  input: z.object({ agentId: z.string(), id: z.string().uuid() }),
+  output: z.object({ queued: z.literal(true) }),
+});
+export const beginSecretSelfTest = defineRpc({
+  name: "secrets.selftest.begin",
+  input: z.object({}),
+  output: ticketSchema,
+});
+export const completeSecretSelfTest = defineRpc({
+  name: "secrets.selftest.complete",
+  input: z.object({ ticketId: z.string().uuid(), envelope: envelopeSchema }),
+  output: z.object({ bytes: z.number() }),
 });
 export const listSecrets = defineRpc({
   name: "secrets.list",

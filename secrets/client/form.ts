@@ -20,11 +20,13 @@ interface FormState {
   activeIndex: number;
   status: "editing" | "saving" | "saved";
   error: string | null;
+  retryable: boolean;
 }
 
 export function createSecretForm(
   submit: (secrets: Secret[], images: SecretImage[], skipped: string[]) => Promise<void>,
   requested?: RequestedField[],
+  retry?: { available(): boolean; send(): Promise<void> },
 ) {
   let nextId = 1;
   let closed = false;
@@ -36,6 +38,7 @@ export function createSecretForm(
     activeIndex: 0,
     status: "editing",
     error: null,
+    retryable: false,
   };
   const listeners = new Set<() => void>();
   function publish(next: FormState) {
@@ -114,7 +117,7 @@ export function createSecretForm(
       publish({ ...state, fields: state.fields.filter((field) => field.id !== id) });
     },
     async save() {
-      if (closed || state.status !== "editing") return;
+      if (closed || state.status !== "editing" || state.retryable) return;
       const skipped = state.fields.filter((field) => field.skipped).map((field) => field.name);
       const allSkipped = Boolean(requested) && skipped.length === state.fields.length;
       const parsed = bundleSchema.safeParse({
@@ -165,12 +168,29 @@ export function createSecretForm(
           publish({
             ...state,
             status: "editing",
-            error:
-              "Could not confirm submission. Check pending grants before retrying, then enter the values again.",
+            retryable: retry?.available() ?? false,
+            error: retry?.available()
+              ? "Submission could not be confirmed. Retry the encrypted submission without entering the values again."
+              : "Could not confirm submission. Check pending grants before retrying, then enter the values again.",
           });
       } finally {
         data.secrets.length = 0;
         data.images.length = 0;
+      }
+    },
+    async retry() {
+      if (closed || !state.retryable || state.status === "saving" || !retry) return;
+      publish({ ...state, status: "saving", error: null });
+      try {
+        await retry.send();
+        if (!closed) publish({ ...state, status: "saved", retryable: false });
+      } catch {
+        if (!closed)
+          publish({
+            ...state,
+            status: "editing",
+            error: "Submission still unconfirmed. Retry or check pending grants.",
+          });
       }
     },
     close() {

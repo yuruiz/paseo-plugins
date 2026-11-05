@@ -3,14 +3,13 @@ import {
   type PluginButtonContentProps,
   type PluginTimelineItemProps,
   useAgent,
-  usePaseo,
   useRpc,
 } from "@getpaseo/plugin/client";
 import { QuestionButton, useQuestionStyles } from "./question-ui.js";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { grantNotification, listSecrets, revokeSecrets, type Grant } from "../shared/contracts.js";
+import { notifySecretGrant, listSecrets, revokeSecrets, type Grant } from "../shared/contracts.js";
 import { OutputReview, RequestContent } from "./review.js";
 import { SecretsForm } from "./form-view.js";
 import { ConnectedSecrets } from "./connect-browser.js";
@@ -117,7 +116,7 @@ interface GrantRowProps {
 }
 
 export function GrantRow({ grant, agentId, theme, refresh }: GrantRowProps) {
-  const paseo = usePaseo();
+  const notify = useRpc(notifySecretGrant);
   const revoke = useRpc(revokeSecrets);
   const styles = useQuestionStyles(theme);
   const textStyle = styles.text;
@@ -127,7 +126,7 @@ export function GrantRow({ grant, agentId, theme, refresh }: GrantRowProps) {
     onSuccess: refresh,
   });
   const delivery = useMutation({
-    mutationFn: () => paseo.agents.ref(agentId).send(grantNotification(grant)),
+    mutationFn: () => notify({ agentId, id: grant.id }),
   });
   const { mutate: sendInstructions } = delivery;
   const { mutate: revokeGrant } = removal;
@@ -154,7 +153,9 @@ export function GrantRow({ grant, agentId, theme, refresh }: GrantRowProps) {
           disabled={busy}
         />
       </View>
-      {delivery.isSuccess ? <Text style={textStyle}>Instructions sent.</Text> : null}
+      {delivery.isSuccess ? (
+        <Text style={textStyle}>Instructions queued for the agent.</Text>
+      ) : null}
       {failed ? (
         <Text accessibilityRole="alert" style={errorStyle}>
           Action failed. Refresh the grant list before retrying.

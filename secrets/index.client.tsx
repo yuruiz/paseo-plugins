@@ -1,4 +1,5 @@
 import { ConnectSettings } from "./client/connect.js";
+import { SecretSelfTest } from "./client/self-test.js";
 import type { PluginClientContext, PluginButtonRegistration } from "@getpaseo/plugin/client";
 import { z } from "zod";
 import { SecretsPopover, SecretsTimeline } from "./client/content.js";
@@ -6,6 +7,12 @@ import { RequestTimeline, OutputTimeline } from "./client/review.js";
 import { openSecrets, mcpConnection } from "./shared/contracts.js";
 
 export default function contribute(client: PluginClientContext) {
+  client.addSettingsScreen({
+    id: "selftest",
+    title: "Private input connection",
+    icon: "ShieldCheck",
+    Component: SecretSelfTest,
+  });
   client.addSettingsScreen({
     id: "onepassword",
     title: "1Password Connect",
