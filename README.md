@@ -7,6 +7,7 @@ Plugins for [Paseo](https://paseo.sh). Each plugin lives in its own top-level di
 | [Commands](commands/)   | Search, preview and run project, global and session commands from the composer.                   | `commands`        |
 | [Secrets](secrets/)     | Private inputs, one-use execution grants, reviewed output and 1Password Connect integration.      | `secrets`         |
 | [Scheduler](scheduler/) | Business-calendar schedules, upcoming-run previews and run history.                               | `paseo-scheduler` |
+| [Git Diff](git-diff/) | Compare branches and inclusive commit ranges, review files and browse submodule history. | `git-diff` |
 | [GitHub PR](github-pr/) | Pull request monitoring, workspace automation and review workflows. Requires a Linux daemon host. | `github-pr`       |
 | [VS Code](vscode/)      | Open a configured remote VS Code editor inside a workspace tab.                                   | `vscode-diff`     |
 | [Shell Yeah](shell-yeah/) | Run shell commands from chat without injecting agent system prompts. | `shell-yeah` |
@@ -34,6 +35,7 @@ paseo plugin add git:yuruiz/paseo-plugins:mcp-pills
 paseo plugin add git:yuruiz/paseo-plugins:auto-resume
 paseo plugin add git:yuruiz/paseo-plugins:auth
 paseo plugin add git:yuruiz/paseo-plugins:paseo-agent-usage
+paseo plugin add git:yuruiz/paseo-plugins:git-diff
 ```
 
 Each plugin's README describes its host version, setup, data access and platform requirements. Plugins are trusted, unsandboxed code. Existing registry installations keep their previously approved source until the registry approves a migration; the commands above install directly from this repository.

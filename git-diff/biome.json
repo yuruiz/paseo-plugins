@@ -1,0 +1,33 @@
+{
+  "files": {
+    "includes": [
+      "**",
+      "!node_modules",
+      "!artifacts",
+      "!package-lock.json",
+      "!client/generated",
+      "!server/generated",
+      "!scripts/vendor"
+    ]
+  },
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double"
+    }
+  },
+  "linter": {
+    "enabled": true
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}

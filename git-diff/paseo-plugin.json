@@ -1,0 +1,21 @@
+{
+  "id": "git-diff",
+  "name": "Git Diff Review",
+  "description": "Review branch changes against a base branch and inclusive commit ranges, with working changes and submodule history.",
+  "icon": "assets/icon.png",
+  "media": [
+    "assets/git-diff.png",
+    "assets/git-history.png",
+    "assets/markdown-preview.png",
+    "assets/settings.png"
+  ],
+  "translations": {
+    "zh-CN": {
+      "name": "Git Diff · 分支与提交 Review",
+      "description": "对比当前分支与默认分支、审阅连续提交区间，并保留工作区和子模块 diff。"
+    }
+  },
+  "requirements": {
+    "paseo": ">=0.12.0"
+  }
+}
