@@ -5,6 +5,9 @@ running and failed calls. Click a card header to expand its code, arguments and 
 to collapse it. Status updates preserve your choice while the card remains mounted. The header
 still shows the tool name, title, running or failed state, duration and exit code when available.
 
+Expanded tool details scroll within a bounded panel. The action bar stays outside the output,
+with **Back to top** and **Collapse** available without scrolling through long commands or logs.
+
 Imported from [ABorakati/beautiful-chat](https://github.com/ABorakati/beautiful-chat) at
 [`42b61d8301b5400a67821bbbfcf99fa8b681dc37`](https://github.com/ABorakati/beautiful-chat/commit/42b61d8301b5400a67821bbbfcf99fa8b681dc37).
 The upstream MIT license and attribution are retained. The screenshots below show upstream cards
