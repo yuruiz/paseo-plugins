@@ -1,0 +1,49 @@
+{
+  "name": "paseo-agent-usage",
+  "version": "0.8.3",
+  "description": "Coding-agent token usage with grouped single-line 24h, 7d and 30d footer totals with hover feedback, automatic multi-host aggregation, SSH collection, and customizable dashboards.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CasonMo/paseo-agent-usage.git"
+  },
+  "files": [
+    "paseo-plugin.json",
+    "OVERVIEW.md",
+    "index.client.tsx",
+    "index.server.ts",
+    "client/",
+    "shared/",
+    "server/report.ts",
+    "server/service.ts",
+    "server/update-check.ts",
+    "server/scan/",
+    "server/remote/",
+    "assets/",
+    "server/snapshot.ts",
+    "server/i18n.ts"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build:collector": "node scripts/build-collector.mjs",
+    "check:dashboard": "tsx scripts/check-dashboard.ts",
+    "check:prefs": "tsx scripts/check-prefs.ts",
+    "check:report": "tsx scripts/check-report.ts",
+    "check": "npm run typecheck && npm run check:dashboard && npm run check:report && npm run check:prefs && npm run check:fleet && npm run check:runtime",
+    "check:fleet": "tsx scripts/check-fleet.ts",
+    "check:runtime": "node scripts/check-runtime.mjs"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.13.0-beta.1",
+    "@tanstack/react-query": "^5.90.11",
+    "@types/node": "^24.19.2",
+    "@types/react": "~19.2.0",
+    "esbuild": "^0.28.2",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-test-renderer": "19.1.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "zod": "^4.4.3"
+  }
+}
