@@ -12,7 +12,7 @@ npm run check -- commands
 npm test -- commands server/commands.test.ts
 ```
 
-Omit the plugin name from `setup` or `check` to process all plugins sequentially. The local root test command requires a plugin and specific test files. CI runs each plugin's full suite separately.
+Omit the plugin name from `setup` or `check` to process all plugins sequentially. Agent Usage retains its upstream assertion scripts: `npm run check -- paseo-agent-usage` runs its typecheck and full checks; use its package scripts such as `npm --prefix paseo-agent-usage run check:fleet` for targeted checks. The local root test command requires a plugin and specific test files. CI runs each plugin's full suite separately.
 
 You can also run the package's scripts directly:
 

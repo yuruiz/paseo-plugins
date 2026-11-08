@@ -1,6 +1,6 @@
 # Agent Usage
 
-在 Paseo 中查看各编码 Agent 的本地用量统计。
+在 Paseo 中查看各编码 Agent 的本地用量统计。本版本在 `yuruiz/paseo-plugins` 仓库的 `paseo-agent-usage/` 目录维护。
 
 数据源（在 daemon 所在机器本地读取；远端机器数据经 SSH 采集，见下文）：
 
@@ -63,7 +63,7 @@
 
 - 读取：本机（及各远端主机）的本地会话日志
 - 写入：daemon 所在机器的插件数据目录（扫描状态、主机配置与稳定来源 ID）；远端仅写增量缓存
-- 网络：跨主机快照使用已有的 Paseo 认证连接（见上文）；额外的 HTTP 访问为版本更新检查（每小时最多一次，仅读取公开的 registry 记录与对应提交的 package.json，来自 raw.githubusercontent.com、api.github.com，不发送任何数据）；SSH 采集通过系统 ssh 命令连接你配置的主机
+- 网络：跨主机快照使用已有的 Paseo 认证连接（见上文）；额外的 HTTP 访问为版本更新检查（每小时最多一次，仅读取合集仓库 main 分支的提交信息和该提交中本插件的 package.json，来自 raw.githubusercontent.com、api.github.com，不发送任何数据）；SSH 采集通过系统 ssh 命令连接你配置的主机
 - 不读取、不保存、不发送任何登录凭据；不发送 prompts、代码或日志内容到任何服务
 - 支持 macOS 与 Linux；需要 Paseo 0.13.0-beta.1 或更高版本
 
@@ -71,7 +71,7 @@
 
 # Agent Usage (English)
 
-View local usage statistics for coding agents inside Paseo.
+View local usage statistics for coding agents inside Paseo. This version is maintained in `paseo-agent-usage/` in the `yuruiz/paseo-plugins` collection.
 
 Data sources (read locally on the daemon host; remote machines are collected over SSH, see below):
 
@@ -134,6 +134,6 @@ Usage from other machines can be counted in as well. Two ways to configure it:
 
 - Reads: local session logs on this machine (and on each remote host)
 - Writes: the plugin data directory on the daemon host (scan state, host configuration and stable source identity); on remotes only the incremental cache
-- Network: cross-host snapshots use the existing authenticated Paseo connections described above; additional HTTP access is the update check (at most once an hour, reading only the public registry record and the pinned package.json from raw.githubusercontent.com and api.github.com, sending no data); SSH collection connects to your configured hosts through the system ssh command
+- Network: cross-host snapshots use the existing authenticated Paseo connections described above; additional HTTP access is the update check (at most once an hour, reading only the collection main revision and this plugin's package.json at that revision from raw.githubusercontent.com and api.github.com, sending no data); SSH collection connects to your configured hosts through the system ssh command
 - No login credentials are read, stored, or sent; no prompts, code, or log content is sent to any service
 - Supports macOS and Linux; requires Paseo 0.13.0-beta.1 or later

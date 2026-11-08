@@ -1,11 +1,12 @@
 {
   "name": "paseo-agent-usage",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "Coding-agent token usage with grouped single-line 24h, 7d and 30d footer totals with hover feedback, automatic multi-host aggregation, SSH collection, and customizable dashboards.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/CasonMo/paseo-agent-usage.git"
+    "url": "git+https://github.com/yuruiz/paseo-plugins.git",
+    "directory": "paseo-agent-usage"
   },
   "files": [
     "paseo-plugin.json",
@@ -29,9 +30,10 @@
     "check:dashboard": "tsx scripts/check-dashboard.ts",
     "check:prefs": "tsx scripts/check-prefs.ts",
     "check:report": "tsx scripts/check-report.ts",
-    "check": "npm run typecheck && npm run check:dashboard && npm run check:report && npm run check:prefs && npm run check:fleet && npm run check:runtime",
+    "check": "npm run typecheck && npm run check:dashboard && npm run check:report && npm run check:prefs && npm run check:fleet && npm run check:runtime && npm run check:update",
     "check:fleet": "tsx scripts/check-fleet.ts",
-    "check:runtime": "node scripts/check-runtime.mjs"
+    "check:runtime": "node scripts/check-runtime.mjs",
+    "check:update": "tsx scripts/check-update.ts"
   },
   "devDependencies": {
     "@getpaseo/plugin": "0.13.0-beta.1",
@@ -45,5 +47,12 @@
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "zod": "^4.4.3"
+  },
+  "homepage": "https://github.com/yuruiz/paseo-plugins/tree/main/paseo-agent-usage#readme",
+  "bugs": {
+    "url": "https://github.com/yuruiz/paseo-plugins/issues"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

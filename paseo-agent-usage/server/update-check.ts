@@ -1,10 +1,10 @@
 import { PLUGIN_VERSION } from "../shared/version";
 import { st } from "./i18n";
 
-const RECORD_RAW = "https://raw.githubusercontent.com/getpaseo/plugins/main/plugins/casonmo/agent-usage.json";
-const RECORD_API = "https://api.github.com/repos/getpaseo/plugins/contents/plugins/casonmo/agent-usage.json";
-const REPO_RAW = "https://raw.githubusercontent.com/CasonMo/paseo-agent-usage";
-const REPO_API = "https://api.github.com/repos/CasonMo/paseo-agent-usage/contents";
+const MAIN_REF_API = "https://api.github.com/repos/yuruiz/paseo-plugins/git/ref/heads/main";
+const REPO_RAW = "https://raw.githubusercontent.com/yuruiz/paseo-plugins";
+const REPO_API = "https://api.github.com/repos/yuruiz/paseo-plugins/contents";
+const PACKAGE_PATH = "paseo-agent-usage/package.json";
 const CACHE_TTL_MS = 3_600_000;
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -64,19 +64,15 @@ async function fetchFirst(candidates: Array<{ url: string; accept?: string }>): 
   throw lastError instanceof Error ? lastError : new Error(st("更新检查请求失败", "Update check request failed"));
 }
 
-/** 读取 registry 记录（pin commit）→ 读取该 commit 的 package.json 版本 → 与本地版本比较 */
+/** Read the collection main revision, then this plugin's package at that exact commit. */
 export async function checkForUpdate(): Promise<UpdateCheckResult> {
   if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.result;
-  const recordText = await fetchFirst([
-    { url: RECORD_RAW },
-    { url: RECORD_API, accept: "application/vnd.github.raw" },
-  ]);
-  const record = JSON.parse(recordText) as { artifact?: { commit?: unknown } };
-  const commit = typeof record.artifact?.commit === "string" ? record.artifact.commit : "";
-  if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(st("registry 记录缺少有效的 commit pin", "The registry record has no valid commit pin"));
+  const reference = JSON.parse(await fetchText(MAIN_REF_API)) as { object?: { sha?: unknown } };
+  const commit = typeof reference.object?.sha === "string" ? reference.object.sha : "";
+  if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(st("仓库 main 分支缺少有效的 commit", "The repository main branch has no valid commit"));
   const packageText = await fetchFirst([
-    { url: `${REPO_RAW}/${commit}/package.json` },
-    { url: `${REPO_API}/package.json?ref=${commit}`, accept: "application/vnd.github.raw" },
+    { url: `${REPO_RAW}/${commit}/${PACKAGE_PATH}` },
+    { url: `${REPO_API}/${PACKAGE_PATH}?ref=${commit}`, accept: "application/vnd.github.raw" },
   ]);
   const pkg = JSON.parse(packageText) as { version?: unknown };
   const latestVersion = typeof pkg.version === "string" ? pkg.version : "";

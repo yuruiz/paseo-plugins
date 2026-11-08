@@ -71,20 +71,15 @@ A release is not ready while these documents still describe older behavior.
 
 ## Publishing and releases
 
-The registry at https://github.com/getpaseo/plugins pins one exact commit of this
-repository, and that pinned artifact is what users install.
+This plugin is maintained in `paseo-agent-usage/` in `yuruiz/paseo-plugins`.
+Follow the root `CONTRIBUTING.md`. Keep `repository.directory` synchronized with
+this folder and push changes to this collection, not to a standalone repository.
 
-1. Push the finished change to `main` after the checklist below passes.
-2. Request the update in the registry with a direct pull request editing
-   `plugins/casonmo/agent-usage.json`: bump both `artifact.commit` and
-   `repository.commit` to the new `main` hash (and update `listing.media`
-   raw URLs for any media change). Do not open a submission issue — the
-   direct PR path is validated and merged automatically by the registry bot.
-3. The registry bot verifies the pinned commit, runs the trusted registry
-   validation, and merges. Approved listings appear on paseo.sh/plugins; no
-   tag is required.
-4. After merge, confirm the listing installs the new pin
-   (`plugins/casonmo/agent-usage.json` on the registry's `main`).
+Direct Git installs use `git:yuruiz/paseo-plugins:paseo-agent-usage`. Keep the
+runtime ID and data directory unchanged. The original upstream registry listing
+retains its approved source; do not update that listing as part of ordinary
+changes here. The update checker reads this folder's version at the collection's
+`main` commit. Use namespaced tags if publishing a release.
 
 Checklist before pushing:
 
@@ -93,7 +88,7 @@ Checklist before pushing:
 - Grep the change for secrets and real identifiers; confirm none.
 - README, OVERVIEW, and the manifest are updated together (see above).
 - Bump `package.json` and `shared/version.ts` together; the update check compares the
-  registry pin against `shared/version.ts`.
+  collection version against `shared/version.ts`.
 - Screenshots are supplied by the author, never captured or committed by agents. Do not
   generate, capture, or replace images under `assets/`; ask the author to provide the
   desensitized screenshot instead.

@@ -1,5 +1,9 @@
 # paseo-agent-usage
 
+Maintained in the [paseo-plugins collection](https://github.com/yuruiz/paseo-plugins/tree/main/paseo-agent-usage). Imported from [CasonMo/paseo-agent-usage](https://github.com/CasonMo/paseo-agent-usage); the original MIT license and notices are preserved.
+
+Install from the collection with `paseo plugin add git:yuruiz/paseo-plugins:paseo-agent-usage`, or install this local folder. The runtime ID remains `agent-usage-plugin`; existing usage data stays in the same plugin data directory.
+
 Paseo plugin: token usage statistics for coding agents, computed from their local session logs, with optional SSH collection from remote machines.
 
 - Sidebar footer shows only three spaced groups on one line, such as `1.2M 24h`, `8.4M 7d`, and `32M 30d`, with prominent values and muted time labels across Paseo hosts; the row highlights on hover or press, and clicking opens the dashboard
@@ -19,7 +23,7 @@ Paseo plugin: token usage statistics for coding agents, computed from their loca
 - Sessions are grouped by session ID; one agent shows the latest 200 sessions, the request log keeps about 400 calls per agent and reports up to 120; both paginate 20 rows
 - SSH: collect usage from other machines using the system ssh command; hosts are managed in the usage screen or Paseo Settings
 - Settings: English / Chinese UI, auto-refresh interval, local device label, default range and granularity, optional monthly budget in USD
-- Update check: a banner appears when the registry listing has a newer version (reads only public registry data; no user data is sent)
+- Update check: a banner appears when this folder on the collection's main branch has a newer version (reads only public GitHub metadata; no user data is sent)
 
 ## Multiple Paseo hosts
 
@@ -67,7 +71,7 @@ Paseo 插件：基于各编码 Agent 本地会话日志统计 token 用量，支
 - 会话按会话 ID 聚合；单个 Agent 展示最近 200 个会话，请求日志底层每个 Agent 保留约 400 条、报告最多展示 120 条；两者每页 20 条
 - SSH：用系统 ssh 命令从其他机器采集用量；主机在用量页或 Paseo 设置中管理
 - 设置：中英文界面、自动刷新间隔、本机标签、默认时间范围与粒度、可选月度预算（USD）
-- 更新检查：registry 上有新版本时显示横幅（仅读取公开 registry 数据，不发送用户数据）
+- 更新检查：当前合集仓库 main 分支中的插件有新版本时显示横幅（仅读取公开 GitHub 元数据，不发送用户数据）
 
 ## 多个 Paseo 主机
 

@@ -327,7 +327,7 @@ function FeedbackSection({ theme }: { theme: Theme }) {
       <Text style={styles.hint}>{t("config.feedbackHint")}</Text>
       {FEEDBACK_ITEMS.map((item) => (
         <View key={item.template} style={styles.item}>
-          <ExternalLink href={`${ISSUE_URL}?template=${item.template}`} accessibilityLabel={t(item.title)}>
+          <ExternalLink href={`${ISSUE_URL}?title=${encodeURIComponent(`[Agent Usage] ${t(item.title)}`)}`} accessibilityLabel={t(item.title)}>
             <Text style={styles.link}>{t(item.title)}</Text>
           </ExternalLink>
           <Text style={styles.hint}>{t(item.hint)}</Text>
