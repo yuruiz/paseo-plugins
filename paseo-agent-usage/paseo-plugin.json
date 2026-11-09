@@ -1,11 +1,11 @@
 {
   "id": "agent-usage-plugin",
   "name": "Agent Usage",
-  "description": "Coding-agent token usage with grouped single-line 24h, 7d and 30d footer totals with hover feedback, automatic multi-host aggregation, SSH collection, and customizable dashboards.",
+  "description": "Coding-agent token usage with consistent mobile and desktop 24h, 7d and 30d footer totals with hover feedback, automatic multi-host aggregation, SSH collection, and customizable dashboards.",
   "translations": {
     "zh-CN": {
       "name": "Agent 用量",
-      "description": "统计编码 Agent 的 Token 用量，footer 单行分组显示近 24 小时、7 天和 30 天总量，悬停和按下时高亮，支持多个 Paseo 主机自动汇总、SSH 采集与自定义看板。"
+      "description": "统计编码 Agent 的 Token 用量，手机和桌面 footer 使用一致的 K/M/B/T 缩写，单行分组显示近 24 小时、7 天和 30 天总量，悬停和按下时高亮，支持多个 Paseo 主机自动汇总、SSH 采集与自定义看板。"
     }
   },
   "icon": "assets/icon.png",

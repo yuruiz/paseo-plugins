@@ -4,8 +4,7 @@ import { useMemo } from "react";
 import { useFleet } from "./fleet";
 import { footerTotals } from "../shared/fleet";
 import { useI18n } from "./i18n";
-
-const tokenFormat = new Intl.NumberFormat("en", { notation: "compact", maximumSignificantDigits: 2 });
+import { formatCompactTokens } from "./format";
 
 export function UsageSidebarItem({ openScreen, theme }: PluginSidebarItemProps) {
   const { fleet } = useFleet();
@@ -28,7 +27,7 @@ export function UsageSidebarItem({ openScreen, theme }: PluginSidebarItemProps) 
         <View key={range} style={{ flexDirection: "row", alignItems: "baseline", gap: 5, minWidth: 0 }}>
           <Text numberOfLines={1}
             style={{ color: theme.colors.foreground, fontSize: 12, lineHeight: 18, fontWeight: "500", fontVariant: ["tabular-nums"] }}>
-            {fleet.hasData ? tokenFormat.format(totals[range]) : "—"}
+            {fleet.hasData ? formatCompactTokens(totals[range]) : "—"}
           </Text>
           <Text numberOfLines={1}
             style={{ color: theme.colors.foregroundMuted, fontSize: 11, lineHeight: 18 }}>

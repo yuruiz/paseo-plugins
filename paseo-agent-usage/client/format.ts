@@ -1,5 +1,20 @@
 import { translateNow } from "./i18n";
 
+/** Portable compact notation; some mobile Intl implementations ignore notation. */
+export function formatCompactTokens(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  // Round before choosing a unit, so a carry across 1000 promotes K to M, etc.
+  let scaled = Number(Math.abs(value).toPrecision(2));
+  const units = ["", "K", "M", "B", "T"];
+  let unit = 0;
+  while (scaled >= 1000 && unit < units.length - 1) {
+    scaled /= 1000;
+    unit += 1;
+  }
+  const sign = value < 0 && scaled !== 0 ? "-" : "";
+  return `${sign}${Number(scaled.toPrecision(2))}${units[unit]}`;
+}
+
 export function formatTokens(value: number): string {
   const abs = Math.abs(value);
   if (abs >= 1e9) return `${(value / 1e9).toFixed(2)}B`;

@@ -16,11 +16,12 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
 const cleanups = [];
 let renderer;
+const originalNumberFormat = Intl.NumberFormat;
 try {
   const hostUi = `export const SidebarRow = "SidebarRow", TextInput = "TextInput", Icon = "Icon", ExternalLink = "ExternalLink";
     export const useToast = () => ({ error() {} });`;
   const result = await build({
-    stdin: { contents: `export { default } from "./index.client"; export { useUsageReport, useAgentReport } from "./client/data";`, resolveDir: process.cwd(), loader: "tsx" },
+    stdin: { contents: `export { default } from "./index.client"; export { useUsageReport, useAgentReport } from "./client/data"; export { formatCompactTokens } from "./client/format";`, resolveDir: process.cwd(), loader: "tsx" },
     bundle: true, platform: "browser", format: "cjs", write: false,
     plugins: [{ name: "test-host-runtime", setup(build) {
       build.onResolve({ filter: /^(react-native|@getpaseo\/plugin\/client(?:\/ui|\/react-native)?)$/ }, (args) => ({ path: args.path, namespace: "test-host" }));
@@ -37,8 +38,21 @@ try {
   // between these files; only the plugin's explicitly versioned registry is shared.
   const code = result.outputFiles[0].text;
   await Promise.all([writeFile(join(dir, "host-a.cjs"), code), writeFile(join(dir, "host-b.cjs"), code)]);
+  // Model a mobile runtime that accepts but ignores compact notation.
+  Intl.NumberFormat = function (locales, options = {}) {
+    const { notation, compactDisplay, ...supported } = options;
+    return new originalNumberFormat(locales, supported);
+  };
   const a = require(join(dir, "host-a.cjs"));
   const b = require(join(dir, "host-b.cjs"));
+  for (const [value, expected] of [
+    [0, "0"], [-0, "0"], [12, "12"], [300, "300"],
+    [994, "990"], [995, "1K"], [1200, "1.2K"],
+    [994999, "990K"], [995000, "1M"], [1234567, "1.2M"],
+    [995000000, "1B"], [2400000000, "2.4B"], [5700000000, "5.7B"],
+    [9100000000, "9.1B"], [995000000000, "1T"], [-1200000, "-1.2M"],
+    [NaN, "—"], [Infinity, "—"],
+  ]) assert.equal(a.formatCompactTokens(value), expected);
   const snapshots = [1, 2].map((n) => ({
     version: 1, sourceId: `${n}${n}${n}${n}${n}${n}${n}${n}-${n}${n}${n}${n}-4${n}${n}${n}-8${n}${n}${n}-${String(n).repeat(12)}`,
     label: `Example host ${n}`, generatedAt: Date.now(), lastScanAt: Date.now(),
@@ -129,8 +143,23 @@ try {
   assert.equal(report.fleet.partial, false, "reconnect clears dashboard partial status");
   await act(async () => { cleanups.pop()(); });
   assert.equal(report.data?.totals.input, 100, "unloading a host removes its contribution");
-  console.log("runtime checks passed (independent host bundles, real React hooks, shared requests, footer, themes, compact layout, offline/reconnect, cleanup)");
+  // Large mobile footer totals must remain compact even when Intl ignores notation.
+  snapshots[0] = { ...snapshots[0], generatedAt: Date.now(), buckets: Object.fromEntries(
+    [[0, 2400000000], [2, 3300000000], [10, 3400000000]].map(([days, input]) => [
+      `${new Date(Date.now() - days * 86400000).toISOString()}\u0001codex\u0001test\u0001acme-project`,
+      { r: 1, i: input, o: 0, cr: 0, cw: 0, rz: 0, cost: 0, credits: 0 },
+    ]),
+  ) };
+  await act(async () => {
+    renderer.update(render(true, themes[1]));
+    await queryClient.refetchQueries({ queryKey: ["agent-usage-fleet"] });
+  });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+  assert.deepEqual(renderer.root.findAllByType("Text").map(text => text.props.children), ["2.4B", "24h", "5.7B", "7d", "9.1B", "30d"]);
+  assert(renderer.root.findByType("Pressable").props.accessibilityLabel.includes("2400000000"), "full counts remain accessible");
+  console.log("runtime checks passed (independent host bundles, real React hooks, shared requests, footer, mobile compact numbers, themes, compact layout, offline/reconnect, cleanup)");
 } finally {
+  Intl.NumberFormat = originalNumberFormat;
   if (renderer) await act(async () => renderer.unmount());
   for (const cleanup of cleanups) cleanup();
   queryClient.clear();

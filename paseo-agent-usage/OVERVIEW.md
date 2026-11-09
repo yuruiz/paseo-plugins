@@ -9,7 +9,7 @@
 - OpenCode：`~/.local/share/opencode/opencode.db`（通过 node:sqlite 只读；reasoning token 计入输出，与计费口径一致）
 - Pi：`~/.pi/agent/sessions`（含 forks 与子会话目录；跨文件按消息去重，fork 复制段不重复计）
 
-界面：侧边栏底部仅用一行显示 三组留有间距的数据，例如 `1.2M 24h`、`8.4M 7d`、`32M 30d`，数字突出、时间标签弱化，汇总所有 Paseo 主机，不显示标题、图标或状态行；悬停或按下时高亮，点击打开全屏看板。看板包含 6 个预设页（总览、构成、效率、节奏、会话、对比），也支持自定义页面（空白新建或复制当前页，改名、排序、隐藏、删除；自定义页只在聚合视图生效，Agent 视图复用预设页）。每张图表都是卡片，可上移/下移、整行/半宽、隐藏或移除，布局按页面保存在本机偏好里。
+界面：侧边栏底部仅用一行显示 三组留有间距的数据，例如 `1.2M 24h`、`8.4M 7d`、`32M 30d`，数字突出、时间标签弱化，手机与桌面统一使用 K/M/B/T 缩写，汇总所有 Paseo 主机，不显示标题、图标或状态行；悬停或按下时高亮，点击打开全屏看板。看板包含 6 个预设页（总览、构成、效率、节奏、会话、对比），也支持自定义页面（空白新建或复制当前页，改名、排序、隐藏、删除；自定义页只在聚合视图生效，Agent 视图复用预设页）。每张图表都是卡片，可上移/下移、整行/半宽、隐藏或移除，布局按页面保存在本机偏好里。
 
 - 看板顶部展示可关闭的「开源共创」横幅，可直接前往 GitHub 提 Issue 或提 PR；关闭状态会持久化并永久隐藏该横幅，配置页仍保留按问题、功能需求和 Agent 接入分类的 Issue 模板入口
 - 顶部用紧凑工具栏提供设备选择（所有 Paseo 主机 / 单台 Paseo 主机 / 当前主机 + SSH / 本机 / 各 SSH 远端）、Agent 选择（总览 + Claude Code / Codex / OpenCode / Pi）、时间范围与粒度；页面内的页签和卡片负责分析内容
@@ -80,7 +80,7 @@ Data sources (read locally on the daemon host; remote machines are collected ove
 - OpenCode: `~/.local/share/opencode/opencode.db` (read-only via node:sqlite; reasoning tokens count as output, matching the billing basis)
 - Pi: `~/.pi/agent/sessions` (including forks and sub-session directories; messages are deduplicated across files, so copied fork segments are not counted twice)
 
-Interface: the footer shows only three spaced groups on one line, such as `1.2M 24h`, `8.4M 7d`, and `32M 30d`, with prominent values and muted time labels across Paseo hosts, without a title, icon or status row; the row highlights on hover or press, and clicking it opens a full-screen dashboard. The dashboard has six preset pages (Overview, Composition, Efficiency, Rhythm, Sessions, Compare) and supports custom pages (create blank or duplicate the current page, rename, reorder, hide, delete; custom pages live in the aggregate view, while the agent view reuses the preset pages). Every chart is a card that can move up/down, switch full/half width, hide or be removed; layouts are saved per page in local preferences.
+Interface: the footer shows only three spaced groups on one line, such as `1.2M 24h`, `8.4M 7d`, and `32M 30d`, with prominent values and muted time labels (K/M/B/T abbreviations are consistent on desktop and mobile) across Paseo hosts, without a title, icon or status row; the row highlights on hover or press, and clicking it opens a full-screen dashboard. The dashboard has six preset pages (Overview, Composition, Efficiency, Rhythm, Sessions, Compare) and supports custom pages (create blank or duplicate the current page, rename, reorder, hide, delete; custom pages live in the aggregate view, while the agent view reuses the preset pages). Every chart is a card that can move up/down, switch full/half width, hide or be removed; layouts are saved per page in local preferences.
 
 - The dashboard header shows a dismissible open-source co-creation banner with direct GitHub issue and pull-request links; dismissal is persisted and hides the banner permanently, while Settings keeps the issue-template entries for bugs, feature requests, and new agents
 - Device selector (all Paseo hosts / each Paseo host / selected host + SSH / local / each SSH remote), agent selector (overview + Claude Code / Codex / OpenCode / Pi), range and granularity stay in a compact toolbar; page tabs and cards hold the analysis
