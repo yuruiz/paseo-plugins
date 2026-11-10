@@ -18,6 +18,7 @@ Plugins for [Paseo](https://paseo.sh). Each plugin lives in its own top-level di
 | [Auto Resume](auto-resume/) | Resume Claude/Codex conversations after subscription quota resets. | `auto-resume` |
 
 | [Agent Usage](paseo-agent-usage/) | Multi-host token totals, a compact usage footer, and detailed usage dashboards. | `agent-usage-plugin` |
+| [Beautiful Chat](beautiful-chat/) | Styled chat cards with every tool call collapsed by default. | `beautiful-chat` |
 
 ## Install
 
@@ -36,6 +37,7 @@ paseo plugin add git:yuruiz/paseo-plugins:auto-resume
 paseo plugin add git:yuruiz/paseo-plugins:auth
 paseo plugin add git:yuruiz/paseo-plugins:paseo-agent-usage
 paseo plugin add git:yuruiz/paseo-plugins:git-diff
+paseo plugin add git:yuruiz/paseo-plugins:beautiful-chat
 ```
 
 Each plugin's README describes its host version, setup, data access and platform requirements. Plugins are trusted, unsandboxed code. Existing registry installations keep their previously approved source until the registry approves a migration; the commands above install directly from this repository.

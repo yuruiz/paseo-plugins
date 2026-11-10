@@ -1,0 +1,8 @@
+{
+  "id": "beautiful-chat",
+  "description": "Styled chat cards with tool call details collapsed by default",
+  "requirements": {
+    "paseo": ">=0.8.0"
+  },
+  "build": [["npm", "ci", "--include=dev"]]
+}

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const plugins = ["commands", "secrets", "scheduler", "github-pr", "vscode", "shell-yeah", "skills", "mcp-pills", "auth", "auto-resume", "paseo-agent-usage", "git-diff"];
+const plugins = ["commands", "secrets", "scheduler", "github-pr", "vscode", "shell-yeah", "skills", "mcp-pills", "auth", "auto-resume", "paseo-agent-usage", "git-diff", "beautiful-chat"];
 const operations = ["setup", "check", "typecheck", "lint", "format", "format:check", "test"];
 const [operation, ...args] = process.argv.slice(2);
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -44,7 +44,7 @@ for (const plugin of selected) {
   if (operation === "setup") {
     run(plugin, ["ci", "--ignore-scripts", "--no-audit", "--no-fund"]);
   } else if (operation === "check") {
-    const checks = plugin === "paseo-agent-usage" ? ["check"] : ["typecheck", "lint", "format:check"];
+    const checks = plugin === "paseo-agent-usage" ? ["check"] : plugin === "beautiful-chat" ? ["typecheck"] : ["typecheck", "lint", "format:check"];
     for (const script of checks) run(plugin, ["run", script]);
   } else if (operation === "test") {
     run(plugin, ["run", "test", "--", ...testFiles]);
