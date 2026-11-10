@@ -52,8 +52,8 @@ export function DiffViewer({
   lineNumbers?: boolean;
 }) {
   const styles = useMemo(
-    () => makeStyles(theme, fontSize, fontFamily, fontWeight),
-    [theme, fontSize, fontFamily, fontWeight],
+    () => makeStyles(theme, fontSize, fontFamily, fontWeight, wrap),
+    [theme, fontSize, fontFamily, fontWeight, wrap],
   );
   const colors = useMemo(() => panelTokens(theme), [theme]);
   const language = useMemo(() => languageForPath(diff.path), [diff.path]);
@@ -174,6 +174,21 @@ export function DiffViewer({
     const content = (line?.content || " ").replace(/\t/g, " ".repeat(tabSize));
     return effectiveWrap ? content : content.slice(0, MAX_COLUMNS);
   }
+  function changeColor(line: DiffLine | null) {
+    return line?.kind === "added"
+      ? colors.statusSuccess
+      : line?.kind === "removed"
+        ? colors.statusDanger
+        : colors.foregroundMuted;
+  }
+  function signStyle(line: DiffLine | null) {
+    const changed = line?.kind === "added" || line?.kind === "removed";
+    return {
+      color: changeColor(line),
+      backgroundColor: background(line, true),
+      borderLeftColor: changed ? changeColor(line) : "transparent",
+    };
+  }
   function splitCell(line: DiffLine | null, right: boolean) {
     const codeWidth = Math.max(
       textWidth,
@@ -187,16 +202,17 @@ export function DiffViewer({
         ]}
       >
         {lineNumbers ? (
-          <Text selectable style={[styles.gutter, { backgroundColor: background(line, true) }]}>
+          <Text
+            selectable
+            style={[
+              styles.gutter,
+              { backgroundColor: background(line, true), color: changeColor(line) },
+            ]}
+          >
             {line ? (right ? line.newLine : line.oldLine) : ""}
           </Text>
         ) : null}
-        <Text
-          style={[
-            styles.sign,
-            { color: line?.kind === "added" ? colors.statusSuccess : colors.statusDanger },
-          ]}
-        >
+        <Text style={[styles.sign, signStyle(line)]}>
           {line?.kind === "added" ? "+" : line?.kind === "removed" ? "−" : " "}
         </Text>
         <View style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
@@ -249,21 +265,28 @@ export function DiffViewer({
     return (
       <View style={[styles.line, { backgroundColor: background(line) }]}>
         {lineNumbers ? (
-          <Text selectable style={[styles.gutter, { backgroundColor: background(line, true) }]}>
+          <Text
+            selectable
+            style={[
+              styles.gutter,
+              { backgroundColor: background(line, true), color: changeColor(line) },
+            ]}
+          >
             {line.oldLine}
           </Text>
         ) : null}
         {lineNumbers ? (
-          <Text selectable style={[styles.gutter, { backgroundColor: background(line, true) }]}>
+          <Text
+            selectable
+            style={[
+              styles.gutter,
+              { backgroundColor: background(line, true), color: changeColor(line) },
+            ]}
+          >
             {line.newLine}
           </Text>
         ) : null}
-        <Text
-          style={[
-            styles.sign,
-            { color: line.kind === "added" ? colors.statusSuccess : colors.statusDanger },
-          ]}
-        >
+        <Text style={[styles.sign, signStyle(line)]}>
           {line.kind === "added" ? "+" : line.kind === "removed" ? "−" : " "}
         </Text>
         <Text
@@ -415,6 +438,7 @@ function makeStyles(
   fontSize: number,
   fontFamily?: string,
   fontWeight: "400" | "500" | "600" = "500",
+  wrap = false,
 ) {
   const c = panelTokens(theme);
   const mono = fontFamily ?? c.mono;
@@ -438,14 +462,19 @@ function makeStyles(
     },
     sign: {
       width: 18,
+      borderLeftWidth: 3,
       textAlign: "center",
       paddingVertical: 2,
       fontFamily: mono,
-      fontWeight,
+      fontWeight: "700",
       fontSize,
       lineHeight: fontSize + 6,
     },
     code: {
+      // RN Web's numberOfLines={1} uses nowrap, which collapses code indentation.
+      ...(Platform.OS === "web"
+        ? { whiteSpace: wrap ? ("pre-wrap" as const) : ("pre" as const) }
+        : {}),
       flex: 1,
       minWidth: 0,
       paddingRight: 12,
