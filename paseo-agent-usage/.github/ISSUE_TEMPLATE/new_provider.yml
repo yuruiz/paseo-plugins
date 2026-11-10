@@ -1,0 +1,52 @@
+name: 接入新的 Agent / New provider
+description: 希望 Agent Usage 支持一个新的 Agent / Ask Agent Usage to support another agent
+title: "[Provider] "
+labels: ["provider"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请先删掉凭据、prompt、代码路径中的用户名和任何未脱敏的日志内容。
+        Before submitting, remove credentials, prompts, usernames in paths, and any unredacted log content.
+  - type: input
+    id: agent
+    attributes:
+      label: Agent 名称 / Agent name
+      placeholder: Claude Code, Codex, OpenCode, ...
+    validations:
+      required: true
+  - type: input
+    id: docs
+    attributes:
+      label: 官方文档 / Documentation
+      description: 该 Agent 的官网或文档链接。 / Link to the agent's site or docs.
+  - type: dropdown
+    id: format
+    attributes:
+      label: 用量记录格式 / Usage log format
+      options:
+        - JSONL / JSON
+        - SQLite
+        - 纯文本日志 / Plain text logs
+        - 不确定 / Not sure
+    validations:
+      required: true
+  - type: input
+    id: location
+    attributes:
+      label: 记录位置 / Where the logs live
+      description: 目录或文件位置，可省略用户名。 / Directory or file path; omit your username.
+      placeholder: ~/.agent/sessions
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: 脱敏后的示例 / Desensitized sample
+      description: 一条记录的结构示例，保留字段名，替换所有值。 / One record's structure with field names kept and all values replaced.
+      render: json
+  - type: textarea
+    id: notes
+    attributes:
+      label: 补充说明 / Additional notes
+      description: 是否需要额外配置、凭证或代理？ / Does it need extra configuration, credentials, or a proxy?

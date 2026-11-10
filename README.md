@@ -16,6 +16,8 @@ Plugins for [Paseo](https://paseo.sh). Each plugin lives in its own top-level di
 | [MCP Pills](mcp-pills/) | Browse agent-scoped MCP configuration, tools, resources and prompts. | `mcp-pills` |
 | [Auto Resume](auto-resume/) | Resume Claude/Codex conversations after subscription quota resets. | `auto-resume` |
 
+| [Agent Usage](paseo-agent-usage/) | Multi-host token totals, a compact usage footer, and detailed usage dashboards. | `agent-usage-plugin` |
+
 ## Install
 
 Enable plugins on the intended Paseo host, then install the folders you need:
@@ -31,6 +33,7 @@ paseo plugin add git:yuruiz/paseo-plugins:skills
 paseo plugin add git:yuruiz/paseo-plugins:mcp-pills
 paseo plugin add git:yuruiz/paseo-plugins:auto-resume
 paseo plugin add git:yuruiz/paseo-plugins:auth
+paseo plugin add git:yuruiz/paseo-plugins:paseo-agent-usage
 ```
 
 Each plugin's README describes its host version, setup, data access and platform requirements. Plugins are trusted, unsandboxed code. Existing registry installations keep their previously approved source until the registry approves a migration; the commands above install directly from this repository.
@@ -50,5 +53,7 @@ Run `npm run setup` and `npm run check` to process every plugin sequentially. Ea
 ## Repository migration
 
 The former `paseo-commands`, `paseo-secrets`, `paseo-github-pr` and `paseo-vscode` repositories are consolidated here with their commit histories. Scheduler was imported from its local project. Future development belongs in this repository; the old repositories and release tags remain available for existing installations. Plugin IDs and persisted-data locations are unchanged.
+
+Agent Usage was imported from [CasonMo/paseo-agent-usage](https://github.com/CasonMo/paseo-agent-usage) with its history and MIT license, including the multi-host and footer enhancements. Its source now lives in `paseo-agent-usage/` in this repository.
 
 The directory organization follows [stevecastaneda/paseo-plugins](https://github.com/stevecastaneda/paseo-plugins). Each plugin retains its applicable license and notices.
