@@ -6,6 +6,7 @@ import { frosted } from "./frosted";
 import { surfaceProps } from "./view-props";
 import { glowing } from "./glow";
 import { Rotate } from "./motion";
+import { ToolDetails } from "./tool-details";
 import { Breathe } from "./breathe";
 import { PulseDot } from "./pulse-dot";
 import { radius } from "./theme-tokens";
@@ -448,7 +449,13 @@ export function ToolCallout({
       {...surfaceProps(frosted, glowing(tokens.isDark), selectionSurface)}
       style={styles.container}
     >
-      <Pressable onPress={() => setExpanded((p) => !p)} style={styles.header}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${expanded ? "Collapse" : "Expand"} ${data.title}`}
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded((p) => !p)}
+        style={styles.header}
+      >
         <View style={styles.headerLeft}>
           <Breathe depth={1.08} durationMs={1800}>
             <Glyph name={getToolIconName(data.tool)} size={13} color={iconColor} />
@@ -521,7 +528,11 @@ export function ToolCallout({
       </Pressable>
 
       {expanded && (
-        <View style={styles.body}>
+        <ToolDetails
+          tokens={tokens}
+          contentContainerStyle={styles.body}
+          onCollapse={() => setExpanded(false)}
+        >
           {(data.tool === "bash" || data.tool === "shell" || data.tool === "git") && (
             <View style={styles.terminalWindow}>
               {(data.shell?.command || data.command) && (
@@ -846,7 +857,7 @@ export function ToolCallout({
               )}
             </View>
           )}
-        </View>
+        </ToolDetails>
       )}
     </View>
   );

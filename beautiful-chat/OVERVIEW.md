@@ -4,6 +4,9 @@ Restyles chat tool calls, reasoning, prompts and replies with theme-aware cards.
 start collapsed, including running and failed calls. Click a card header to show or hide its code,
 arguments and output. The header keeps the call's status visible.
 
+Expanded tool details scroll within a bounded panel. The action bar stays outside the output,
+with **Back to top** and **Collapse** available without scrolling through long commands or logs.
+
 Requires Paseo 0.8.0 or later. Presentation settings control fonts, accent colours and enhanced
 message rendering. Existing Beautiful Chat presentation preferences are retained.
 
