@@ -4,6 +4,7 @@ import path from "node:path";
 
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
 
+import { resolveProvider } from "./provider";
 import { parseFrontmatter } from "./resolve/frontmatter";
 import { resolveClaudeSkills } from "./resolve/claude";
 import { resolveCodexSkills } from "./resolve/codex";
@@ -25,9 +26,9 @@ export interface SkillRoots {
  * one it reads as an absent directory, which is the normal case.
  */
 export function defaultSkillRoots(env: NodeJS.ProcessEnv = process.env): SkillRoots {
-  const home = os.homedir();
+  const home = (process.platform === "win32" ? env.USERPROFILE : env.HOME) || os.homedir();
   return {
-    claudeHome: path.join(home, ".claude"),
+    claudeHome: env.CLAUDE_CONFIG_DIR || path.join(home, ".claude"),
     codexHome: env.CODEX_HOME ?? path.join(home, ".codex"),
     agentsHome: path.join(home, ".agents"),
     adminSkillsDir: path.join(path.sep, "etc", "codex", "skills"),
@@ -37,24 +38,38 @@ export function defaultSkillRoots(env: NodeJS.ProcessEnv = process.env): SkillRo
 
 interface ResolvedAgent {
   provider: string;
+  discoveryProvider: string;
   cwd: string;
+  roots: SkillRoots;
 }
 
-async function loadAgent(agentId: string, context: PluginHandlerContext): Promise<ResolvedAgent> {
+async function loadAgent(
+  agentId: string,
+  context: PluginHandlerContext,
+  roots?: SkillRoots,
+): Promise<ResolvedAgent> {
   const handle = context.paseo.agents.ref(agentId);
   const refreshed = await handle.refresh();
   const agent = refreshed?.agent ?? handle.current();
   if (!agent) {
     throw new Error(`Agent not found: ${agentId}`);
   }
-  return { provider: agent.provider, cwd: agent.cwd };
+  const { config } = await context.paseo.config.get();
+  const resolved = resolveProvider(agent.provider, config.providers);
+  return {
+    provider: agent.provider,
+    discoveryProvider: resolved.provider,
+    cwd: agent.cwd,
+    roots: roots ?? defaultSkillRoots(resolved.env),
+  };
 }
 
-async function resolveForAgent(agent: ResolvedAgent, roots: SkillRoots): Promise<SkillEntry[]> {
-  if (agent.provider === "claude") {
+async function resolveForAgent(agent: ResolvedAgent): Promise<SkillEntry[]> {
+  const roots = agent.roots;
+  if (agent.discoveryProvider === "claude") {
     return resolveClaudeSkills({ cwd: agent.cwd, claudeHome: roots.claudeHome });
   }
-  if (agent.provider === "codex") {
+  if (agent.discoveryProvider === "codex") {
     return resolveCodexSkills({
       cwd: agent.cwd,
       codexHome: roots.codexHome,
@@ -62,7 +77,7 @@ async function resolveForAgent(agent: ResolvedAgent, roots: SkillRoots): Promise
       adminSkillsDir: roots.adminSkillsDir,
     });
   }
-  if (agent.provider === "hermes") {
+  if (agent.discoveryProvider === "hermes") {
     return resolveHermesSkills({ hermesHome: roots.hermesHome });
   }
   return [];
@@ -76,13 +91,13 @@ function scansSkillFiles(provider: string): boolean {
   return provider === "claude" || provider === "codex" || provider === "hermes";
 }
 
-export function createListSkillsHandler(roots: SkillRoots = defaultSkillRoots()) {
+export function createListSkillsHandler(roots?: SkillRoots) {
   return async (input: { agentId: string }, context: PluginHandlerContext) => {
-    const agent = await loadAgent(input.agentId, context);
-    const skills = await resolveForAgent(agent, roots);
+    const agent = await loadAgent(input.agentId, context, roots);
+    const skills = await resolveForAgent(agent);
     return {
       provider: agent.provider,
-      scanned: scansSkillFiles(agent.provider),
+      scanned: scansSkillFiles(agent.discoveryProvider),
       cwd: agent.cwd,
       skills,
     };
@@ -93,10 +108,10 @@ export function createListSkillsHandler(roots: SkillRoots = defaultSkillRoots())
  * Takes a skill id, never a path. Discovery runs again and the id is looked up
  * in its result, so the only readable files are ones discovery already found.
  */
-export function createReadSkillHandler(roots: SkillRoots = defaultSkillRoots()) {
+export function createReadSkillHandler(roots?: SkillRoots) {
   return async (input: { agentId: string; skillId: string }, context: PluginHandlerContext) => {
-    const agent = await loadAgent(input.agentId, context);
-    const skills = await resolveForAgent(agent, roots);
+    const agent = await loadAgent(input.agentId, context, roots);
+    const skills = await resolveForAgent(agent);
     const skill = skills.find((entry) => entry.id === input.skillId);
     if (!skill) {
       throw new Error(`Skill not available: ${input.skillId}`);

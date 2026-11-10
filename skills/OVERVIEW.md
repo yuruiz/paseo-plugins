@@ -3,8 +3,9 @@ read its instructions and run it with optional arguments. The full tab also show
 and file path. Skills marked model-only can be read but cannot be invoked manually.
 
 The list and badge count only entries backed by a readable `SKILL.md` with a name and description.
-Discovery supports Claude, Codex and Hermes, including their supported local skill directories
-and installed Claude plugin skills. Bodies are read when a skill is opened.
+Discovery supports Claude, Codex and Hermes and custom providers that extend them, including
+provider-specific configuration directories and installed Claude plugin skills. Bodies are read
+when a skill is opened.
 
 Requires Paseo daemon and app 0.13.0 or newer with plugins enabled. The server reads skill files
 and Claude's installed-plugin manifest on the daemon machine. Invoking a skill sends a command

@@ -39,7 +39,7 @@ Project discovery walks from the agent's working directory to the nearest Git ro
 | Pi       | `.pi/prompts`                             | `$PI_CODING_AGENT_DIR/prompts` or `~/.pi/agent/prompts`                                                      |
 | Copilot  | `.github/prompts`                         | `~/.copilot/prompts`                                                                                         |
 
-Environment overrides come from the daemon process. Provider profiles with a different private environment can still expose commands through the session, but those files may have no preview. Claude plugin commands and configuration-defined commands are included when reported by the session; their backing files are not scanned. Entries explicitly marked as skills are excluded.
+Custom providers inherit discovery from their configured `extends` provider. Directory overrides merge the daemon environment, base-provider `env`, then custom-provider `env`; this includes `HOME` (`USERPROFILE` on Windows) and the directory variables above. Environment changes made inside a launcher script cannot be inferred. Claude plugin commands and configuration-defined commands are included when reported by the session; their backing files are not scanned. Entries explicitly marked as skills are excluded.
 
 Markdown discovery is recursive, follows symlinks with cycle detection, accepts `.md`/`.prompt.md`, and caps each file at 1 MiB. YAML frontmatter supplies `description` and `argument-hint`. The **Directories** button shows the exact search paths.
 

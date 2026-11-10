@@ -13,15 +13,15 @@ export interface CommandRoots {
   pi: string;
 }
 
-export function defaultRoots(): CommandRoots {
-  const home = os.homedir();
-  const config = process.env.XDG_CONFIG_HOME || path.join(home, ".config");
+export function defaultRoots(env: NodeJS.ProcessEnv = process.env): CommandRoots {
+  const home = (process.platform === "win32" ? env.USERPROFILE : env.HOME) || os.homedir();
+  const config = env.XDG_CONFIG_HOME || path.join(home, ".config");
   return {
     home,
-    claude: process.env.CLAUDE_CONFIG_DIR || path.join(home, ".claude"),
-    codex: process.env.CODEX_HOME || path.join(home, ".codex"),
-    opencode: process.env.OPENCODE_CONFIG_DIR || path.join(config, "opencode"),
-    pi: process.env.PI_CODING_AGENT_DIR || path.join(home, ".pi", "agent"),
+    claude: env.CLAUDE_CONFIG_DIR || path.join(home, ".claude"),
+    codex: env.CODEX_HOME || path.join(home, ".codex"),
+    opencode: env.OPENCODE_CONFIG_DIR || path.join(config, "opencode"),
+    pi: env.PI_CODING_AGENT_DIR || path.join(home, ".pi", "agent"),
   };
 }
 
