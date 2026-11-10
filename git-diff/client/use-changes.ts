@@ -219,5 +219,26 @@ export function useFileDiff(
     attempt,
   ]);
   const retry = useCallback(() => setAttempt((value) => value + 1), []);
-  return { ...(state.key === key ? state : { data: cache.get(key) ?? null, error: null }), retry };
+  const loadFullContext = useCallback(() => {
+    if (!directory || !repositoryId || !path) throw new Error("没有选中的文件。");
+    const options = { directory, repositoryId, path, context: 1000000, ignoreWhitespace };
+    return targetOid
+      ? compareFile({ ...options, baseOid: baseOid ?? null, targetOid })
+      : call({ ...options, comparison });
+  }, [
+    call,
+    compareFile,
+    directory,
+    repositoryId,
+    path,
+    baseOid,
+    targetOid,
+    comparison,
+    ignoreWhitespace,
+  ]);
+  return {
+    ...(state.key === key ? state : { data: cache.get(key) ?? null, error: null }),
+    retry,
+    loadFullContext,
+  };
 }

@@ -75,6 +75,15 @@ export function TabEditor({
         },
   );
   const view = JSON.stringify([version, comparison, settings.context, settings.ignoreWhitespace]);
+  const loadFullContext = useCallback(async () => {
+    const full = await patch.loadFullContext();
+    onStats(tabKey, {
+      hunks: patch.data?.hunks.length ?? 0,
+      bytes: (diffWeight(full) + (patch.data ? diffWeight(patch.data) : 0)) * 3,
+      view,
+    });
+    return full;
+  }, [patch.loadFullContext, patch.data, onStats, tabKey, view]);
   useEffect(() => {
     if (!preview && patch.data)
       // Reserve room for derived rows, syntax state and mounted visible lines too.
@@ -127,6 +136,8 @@ export function TabEditor({
       <DiffViewer
         key={comparison}
         diff={patch.data}
+        loadFullContext={loadFullContext}
+        completeContext={settings.context === 1000000}
         theme={theme}
         mode={mode}
         wrap={settings.wrap}

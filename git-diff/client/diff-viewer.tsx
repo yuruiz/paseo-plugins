@@ -1,8 +1,20 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  FlatList,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  type TextInput,
+  View,
+} from "react-native";
 import type { DiffLine, FileDiff } from "../shared/contracts";
-import { buildDiffRows, type DiffRow } from "./diff-model";
+import { buildContextRows, type ContextRow, validateFullContext } from "./context-model";
+import { InputField, ToolButton } from "./controls";
+import { buildDiffRows } from "./diff-model";
+import { findMatches } from "./find-model";
 import { Icon } from "./icons";
 import { diffSyntaxStates, languageForPath } from "./syntax";
 import { SyntaxText } from "./syntax-text";
@@ -10,7 +22,7 @@ import { panelTokens } from "./theme";
 import { DiffResizer } from "./web-chrome";
 
 export type DiffLayout = "unified" | "split";
-type ViewerRow = DiffRow;
+type ViewerRow = ContextRow;
 const LINE_HEIGHT = 22;
 const HUNK_HEIGHT = 28;
 const MAX_COLUMNS = 2000;
@@ -33,6 +45,8 @@ export function DiffViewer({
   onSplitRatioCommit,
   tabSize = 4,
   lineNumbers = true,
+  loadFullContext,
+  completeContext = false,
 }: {
   diff: FileDiff;
   theme: PluginTheme;
@@ -50,22 +64,85 @@ export function DiffViewer({
   onSplitRatioCommit?(): void;
   tabSize?: number;
   lineNumbers?: boolean;
+  loadFullContext?(): Promise<FileDiff>;
+  completeContext?: boolean;
 }) {
+  const [contextState, setContextState] = useState<{
+    source: FileDiff;
+    full: FileDiff | null;
+    expanded: Record<number, number>;
+    loading: boolean;
+    error: string | null;
+  }>({ source: diff, full: null, expanded: {}, loading: false, error: null });
+  if (contextState.source !== diff)
+    setContextState({ source: diff, full: null, expanded: {}, loading: false, error: null });
+  const currentDiff = useRef(diff);
+  currentDiff.current = diff;
+  const contextRequest = useRef(false);
+  const full = contextState.source === diff ? contextState.full : null;
+  const displayedHunks = full?.hunks ?? diff.hunks;
+  async function expandContext(gap: number, all = false) {
+    if (contextRequest.current || !loadFullContext) return;
+    contextRequest.current = true;
+    setContextState((state) => ({ ...state, loading: true, error: null }));
+    try {
+      const loaded = full ?? (await loadFullContext());
+      if (!full) validateFullContext(diff, loaded);
+      if (currentDiff.current !== diff) return;
+      setContextState((state) => ({
+        ...state,
+        full: loaded,
+        loading: false,
+        expanded: { ...state.expanded, [gap]: all ? Infinity : (state.expanded[gap] ?? 0) + 20 },
+      }));
+    } catch (error) {
+      if (currentDiff.current === diff)
+        setContextState((state) => ({
+          ...state,
+          loading: false,
+          error: error instanceof Error ? error.message : String(error),
+        }));
+    } finally {
+      contextRequest.current = false;
+    }
+  }
   const styles = useMemo(
     () => makeStyles(theme, fontSize, fontFamily, fontWeight, wrap),
     [theme, fontSize, fontFamily, fontWeight, wrap],
   );
   const colors = useMemo(() => panelTokens(theme), [theme]);
   const language = useMemo(() => languageForPath(diff.path), [diff.path]);
-  const syntaxStates = useMemo(
-    () =>
-      syntaxHighlight ? diffSyntaxStates(diff.hunks, language) : new WeakMap<DiffLine, object>(),
-    [diff.hunks, language, syntaxHighlight],
-  );
+  const syntaxStates = useMemo(() => {
+    if (!syntaxHighlight) return new WeakMap<DiffLine, object>();
+    const states = diffSyntaxStates(displayedHunks, language);
+    if (full) {
+      const byPosition = new Map(
+        displayedHunks.flatMap((hunk) =>
+          hunk.lines.map(
+            (line) => [`${line.kind}:${line.oldLine}:${line.newLine}`, states.get(line)] as const,
+          ),
+        ),
+      );
+      for (const hunk of diff.hunks)
+        for (const line of hunk.lines) {
+          const state = byPosition.get(`${line.kind}:${line.oldLine}:${line.newLine}`);
+          if (state) states.set(line, state);
+        }
+    }
+    return states;
+  }, [displayedHunks, diff.hunks, full, language, syntaxHighlight]);
+  const [findOpen, setFindOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [matchIndex, setMatchIndex] = useState(0);
+  const findInput = useRef<TextInput>(null);
+  useEffect(() => {
+    if (findOpen) findInput.current?.focus();
+  }, [findOpen]);
   const [width, setWidth] = useState(360);
   const [horizontalOffsets, setHorizontalOffsets] = useState([0, 0]);
   const ratio = Math.max(0.2, Math.min(0.8, splitRatio));
   const rootRef = useRef<View>(null);
+  const unifiedScroll = useRef<ScrollView>(null);
   const originalScroll = useRef<ScrollView>(null);
   const modifiedScroll = useRef<ScrollView>(null);
   const currentRatio = useRef(ratio);
@@ -112,15 +189,81 @@ export function DiffViewer({
   const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const retried = useRef(false);
   const rows = useMemo<ViewerRow[]>(
-    () => buildDiffRows(diff.hunks, mode === "split"),
-    [diff.hunks, mode],
+    () =>
+      query && full
+        ? buildDiffRows(full.hunks, mode === "split")
+        : completeContext || !loadFullContext
+          ? buildDiffRows(diff.hunks, mode === "split")
+          : buildContextRows(diff, full, mode === "split", contextState.expanded),
+    [diff, full, mode, contextState.expanded, completeContext, loadFullContext, query],
   );
+  const matches = useMemo(() => findMatches(rows, query, tabSize), [rows, query, tabSize]);
+  const activeMatch = matches[matchIndex % (matches.length || 1)];
+  useEffect(() => {
+    if (activeMatch) {
+      retried.current = false;
+      listRef.current?.scrollToIndex({
+        index: activeMatch.row,
+        animated: false,
+        viewPosition: 0.4,
+      });
+      if (!wrap) {
+        const x = Math.max(0, activeMatch.start * fontSize * 0.65 - 40);
+        if (mode === "split") {
+          (activeMatch.side === "right" ? modifiedScroll : originalScroll).current?.scrollTo({
+            x,
+            animated: false,
+          });
+        } else unifiedScroll.current?.scrollTo({ x, animated: false });
+      }
+    }
+  }, [activeMatch, wrap, fontSize, mode]);
+  useEffect(() => {
+    if (Platform.OS !== "web" || diff.state !== "text") return;
+    const node = rootRef.current as unknown as {
+      addEventListener(
+        type: string,
+        handler: (event: {
+          key: string;
+          ctrlKey: boolean;
+          metaKey: boolean;
+          preventDefault(): void;
+          stopPropagation(): void;
+        }) => void,
+      ): void;
+      removeEventListener(type: string, handler: unknown): void;
+    } | null;
+    const keydown = (event: {
+      key: string;
+      ctrlKey: boolean;
+      metaKey: boolean;
+      preventDefault(): void;
+      stopPropagation(): void;
+    }) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        event.stopPropagation();
+        setFindOpen(true);
+        findInput.current?.focus();
+      } else if (event.key === "Escape" && findOpen) {
+        event.preventDefault();
+        event.stopPropagation();
+        setFindOpen(false);
+        setQuery("");
+      }
+    };
+    node?.addEventListener("keydown", keydown);
+    return () => node?.removeEventListener("keydown", keydown);
+  }, [findOpen, diff.state]);
+  function navigateMatch(direction: number) {
+    setMatchIndex((index) => (index + direction + matches.length) % (matches.length || 1));
+  }
   const layout = useMemo(() => {
     let offset = 0;
     const hunks: number[] = [];
     const sizes = rows.map((row, index) => {
       if ("header" in row) hunks.push(index);
-      const length = "header" in row ? HUNK_HEIGHT : LINE_HEIGHT + fontSize - 12;
+      const length = "header" in row || "gap" in row ? HUNK_HEIGHT : LINE_HEIGHT + fontSize - 12;
       const result = { index, length, offset };
       offset += length;
       return result;
@@ -130,32 +273,38 @@ export function DiffViewer({
   const { longest, columns } = useMemo(() => {
     let longest = 30;
     let columns = 30;
-    for (const hunk of diff.hunks)
+    for (const hunk of displayedHunks)
       for (const line of hunk.lines) {
         const expanded = line.content.replace(/\t/g, " ".repeat(tabSize));
         longest = Math.max(longest, expanded.length);
         let visibleColumns = 0;
-        for (const character of expanded.slice(0, MAX_COLUMNS)) {
+        for (const character of query ? expanded : expanded.slice(0, MAX_COLUMNS)) {
           // Reserve two cells for wide Unicode glyphs, including CJK comments.
           visibleColumns += (character.codePointAt(0) ?? 0) > 0xff ? 2 : 1;
         }
         columns = Math.max(columns, visibleColumns);
       }
     return { longest, columns };
-  }, [diff.hunks, tabSize]);
+  }, [displayedHunks, tabSize, query]);
   const effectiveWrap = wrap;
   const contentWidth =
     effectiveWrap || mode === "split" ? width : Math.max(width, columns * fontSize * 0.65 + 106);
   const textWidth = columns * fontSize * 0.65 + 18;
+  const navigationTarget = useRef<typeof navigation | null>(null);
   useEffect(() => {
+    if (query || navigationTarget.current === navigation) return;
+    const initial = navigationTarget.current === null;
+    navigationTarget.current = navigation;
     retried.current = false;
     const index = layout.hunks[navigation.index];
-    if (index !== undefined)
-      listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0 });
+    if (index !== undefined) {
+      const target = initial && index > 0 && "gap" in rows[index - 1] ? index - 1 : index;
+      listRef.current?.scrollToIndex({ index: target, animated: false, viewPosition: 0 });
+    }
     return () => {
       if (retryTimer.current) clearTimeout(retryTimer.current);
     };
-  }, [navigation, layout.hunks]);
+  }, [navigation, layout.hunks, rows, query]);
 
   function background(line: DiffLine | null, gutter = false) {
     return line?.kind === "added"
@@ -172,7 +321,7 @@ export function DiffViewer({
   }
   function lineText(line: DiffLine | null) {
     const content = (line?.content || " ").replace(/\t/g, " ".repeat(tabSize));
-    return effectiveWrap ? content : content.slice(0, MAX_COLUMNS);
+    return effectiveWrap || query ? content : content.slice(0, MAX_COLUMNS);
   }
   function changeColor(line: DiffLine | null) {
     return line?.kind === "added"
@@ -237,6 +386,8 @@ export function DiffViewer({
               state={line ? syntaxStates.get(line) : undefined}
               background={colors.surface0}
               enabled={syntaxHighlight && line?.kind !== "meta"}
+              search={query}
+              highlightColor={colors.addedGutter}
             />
           </Text>
         </View>
@@ -244,6 +395,35 @@ export function DiffViewer({
     );
   }
   function renderRow({ item, index }: { item: ViewerRow; index: number }) {
+    if ("gap" in item)
+      return loadFullContext ? (
+        <View style={styles.hunk}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              item.count === null ? "展开文件末尾上下文" : `展开 ${item.count} 行相同代码`
+            }
+            disabled={contextState.loading}
+            onPress={() => void expandContext(item.gap)}
+          >
+            <Text style={styles.contextAction}>
+              {contextState.loading
+                ? "正在读取上下文…"
+                : item.count === null
+                  ? "展开后续上下文"
+                  : `展开相同代码（${item.count} 行）`}
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="展开此处全部相同代码"
+            disabled={contextState.loading}
+            onPress={() => void expandContext(item.gap, true)}
+          >
+            <Text style={styles.contextAction}>全部展开</Text>
+          </Pressable>
+        </View>
+      ) : null;
     if ("header" in item)
       return (
         <View style={[styles.hunk, index === layout.hunks[navigation.index] && styles.activeHunk]}>
@@ -255,7 +435,15 @@ export function DiffViewer({
       );
     if (mode === "split")
       return (
-        <View style={styles.line}>
+        <View
+          style={[
+            styles.line,
+            activeMatch?.row === index && {
+              borderBottomWidth: 2,
+              borderBottomColor: colors.accent,
+            },
+          ]}
+        >
           {splitCell(item.left, false)}
           {splitCell(item.right, true)}
         </View>
@@ -263,7 +451,13 @@ export function DiffViewer({
     const line = item.left;
     if (!line) return null;
     return (
-      <View style={[styles.line, { backgroundColor: background(line) }]}>
+      <View
+        style={[
+          styles.line,
+          { backgroundColor: background(line) },
+          activeMatch?.row === index && { borderBottomWidth: 2, borderBottomColor: colors.accent },
+        ]}
+      >
         {lineNumbers ? (
           <Text
             selectable
@@ -301,6 +495,8 @@ export function DiffViewer({
             state={syntaxStates.get(line)}
             background={colors.surface0}
             enabled={syntaxHighlight && line.kind !== "meta"}
+            search={query}
+            highlightColor={colors.addedGutter}
           />
         </Text>
       </View>
@@ -361,10 +557,67 @@ export function DiffViewer({
     <View
       testID="git-code-viewer"
       ref={rootRef}
-      {...(Platform.OS === "web" ? { dataSet: { gitCode: "true", pmono: "true" } } : {})}
+      {...(Platform.OS === "web"
+        ? { tabIndex: 0, dataSet: { gitCode: "true", pmono: "true" } }
+        : {})}
       style={styles.root}
       onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
     >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 4, padding: 4 }}>
+        {findOpen ? (
+          <>
+            <InputField
+              theme={theme}
+              inputRef={findInput}
+              value={query}
+              placeholder="搜索当前文件"
+              accessibilityLabel="搜索当前文件"
+              containerStyle={{ flex: 1 }}
+              onChangeText={(value) => {
+                setQuery(value);
+                setMatchIndex(0);
+                if (value && !full && !completeContext) void expandContext(-1, true);
+              }}
+              onNavigateMatch={navigateMatch}
+            />
+            <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>
+              {contextState.loading
+                ? "读取中…"
+                : `${matches.length ? (matchIndex % matches.length) + 1 : 0}/${matches.length}`}
+            </Text>
+            <ToolButton
+              theme={theme}
+              label="上一个匹配 (Shift+Enter)"
+              text="↑"
+              disabled={!matches.length}
+              onPress={() => navigateMatch(-1)}
+            />
+            <ToolButton
+              theme={theme}
+              label="下一个匹配 (Enter)"
+              icon="chevronDown"
+              disabled={!matches.length}
+              onPress={() => navigateMatch(1)}
+            />
+            <ToolButton
+              theme={theme}
+              label="关闭搜索 (Escape)"
+              icon="close"
+              onPress={() => {
+                setFindOpen(false);
+                setQuery("");
+              }}
+            />
+          </>
+        ) : (
+          <ToolButton
+            theme={theme}
+            label="搜索当前文件 (Ctrl/Cmd+F)"
+            icon="search"
+            onPress={() => setFindOpen(true)}
+          />
+        )}
+      </View>
       {mode === "split" ? (
         <View style={styles.columnHeaders}>
           <View style={[styles.columnHeading, { width: `${ratio * 100}%` }]}>
@@ -375,7 +628,14 @@ export function DiffViewer({
           </View>
         </View>
       ) : null}
-      {!effectiveWrap && longest > MAX_COLUMNS ? (
+      {contextState.error ? (
+        <View accessibilityRole="alert" style={styles.contextError}>
+          <Text selectable style={styles.contextErrorText}>
+            {contextState.error}
+          </Text>
+        </View>
+      ) : null}
+      {!effectiveWrap && !query && longest > MAX_COLUMNS ? (
         <View style={styles.longLineNotice}>
           <Icon name="info" size={12} color={colors.foregroundMuted} />
           <Text style={styles.columnLabel}>
@@ -386,7 +646,12 @@ export function DiffViewer({
       {effectiveWrap || mode === "split" ? (
         list
       ) : (
-        <ScrollView horizontal style={styles.root} contentContainerStyle={styles.horizontal}>
+        <ScrollView
+          ref={unifiedScroll}
+          horizontal
+          style={styles.root}
+          contentContainerStyle={styles.horizontal}
+        >
           {list}
         </ScrollView>
       )}
@@ -499,6 +764,9 @@ function makeStyles(
     },
     activeHunk: { borderLeftColor: c.accent, backgroundColor: c.selection },
     hunkText: { flex: 1, minWidth: 0, color: c.foregroundMuted, fontSize: 10, fontFamily: c.mono },
+    contextAction: { color: c.accent, fontSize: 11, lineHeight: HUNK_HEIGHT },
+    contextError: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: c.surface1 },
+    contextErrorText: { color: c.statusDanger, fontSize: 12 },
     columnHeaders: {
       flexDirection: "row",
       minHeight: 28,

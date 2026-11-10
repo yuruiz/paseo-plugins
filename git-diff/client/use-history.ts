@@ -151,8 +151,13 @@ export function useCommitDiff(
     () => call({ directory, repositoryId, oid, path, context, ignoreWhitespace }),
     [call, directory, repositoryId, oid, path, context, ignoreWhitespace],
   );
-  return useRead<FileDiff>(
+  const patch = useRead<FileDiff>(
     JSON.stringify([directory, repositoryId, oid, path, context, ignoreWhitespace]),
     read,
   );
+  const loadFullContext = useCallback(
+    () => call({ directory, repositoryId, oid, path, context: 1000000, ignoreWhitespace }),
+    [call, directory, repositoryId, oid, path, ignoreWhitespace],
+  );
+  return { ...patch, loadFullContext };
 }

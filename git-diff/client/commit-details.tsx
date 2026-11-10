@@ -376,6 +376,8 @@ export function CommitDiff({
       ) : patch.data ? (
         <DiffViewer
           diff={patch.data}
+          loadFullContext={patch.loadFullContext}
+          completeContext={settings.context === 1000000}
           theme={theme}
           mode={mode}
           wrap={settings.wrap}

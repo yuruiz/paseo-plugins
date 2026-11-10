@@ -6,4 +6,8 @@ Filter changed files, inspect unified or split diffs, navigate hunks, ignore whi
 
 Requires Paseo daemon and client >=0.12.0 and Git on the daemon host. Git objects are read locally and returned through plugin RPC; code is not sent to external services. No fetch, checkout, staging or working tree changes are performed. Remote branches refer to locally available tracking refs. Review is manual; this plugin does not start an AI review agent.
 
+Expand omitted unchanged code in steps of 20 lines or reveal an entire gap, including the file prefix, gaps between hunks and the file tail. Expansion works in unified and split views for working changes, branch comparisons and commit history.
+
 Commit ranges must follow one first-parent chain and contain at most 10000 commits. Missing shallow history produces an error. Files over 1 MiB and patches over 2 MiB are not expanded; binary files show their status. Parent repositories show submodule pointer changes; select an initialized submodule to compare its internal files.
+
+Use the diff editor search button or press Ctrl/Cmd+F while the editor is focused to search both sides of the current file, including collapsed context. Search is case-insensitive and literal. Enter / Shift+Enter navigates matches; Escape closes search.
