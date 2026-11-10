@@ -44,6 +44,7 @@ function agent(provider = "codex"): PluginHandlerContext {
   return {
     paseo: {
       agents: { ref: () => ({ refresh: async () => ({ agent: value }), current: () => value }) },
+      config: { get: async () => ({ config: { providers: {} } }) },
     },
   } as unknown as PluginHandlerContext;
 }

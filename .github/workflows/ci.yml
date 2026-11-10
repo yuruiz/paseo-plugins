@@ -30,10 +30,8 @@ jobs:
       - run: npm run typecheck
       - if: matrix.plugin != 'beautiful-chat'
         run: npm run lint
-        if: matrix.plugin != 'beautiful-chat'
       - if: matrix.plugin != 'beautiful-chat'
         run: npm run format:check
-        if: matrix.plugin != 'beautiful-chat'
       - run: npm test
 
   agent-usage:
