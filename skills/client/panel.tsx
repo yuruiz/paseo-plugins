@@ -1,9 +1,12 @@
 import type { PluginAgentPanelProps } from "@getpaseo/plugin/client";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
+import { Pressable, Text, View } from "react-native";
 
 import { SkillBrowser } from "./browser";
+import { SyncPanel } from "./sync-panel";
 
 export function SkillsPanel({ theme, layout, agentId, navigation }: PluginAgentPanelProps) {
+  const [syncing, setSyncing] = useState(false);
   /**
    * Invoking sent a message to the user's live agent, so the agent's own tab is
    * where the result appears — leaving the user on the Skills tab hides the
@@ -24,12 +27,27 @@ export function SkillsPanel({ theme, layout, agentId, navigation }: PluginAgentP
   );
 
   return (
-    <SkillBrowser
-      theme={theme}
-      frame="screen"
-      padding={layout.compact ? 12 : 20}
-      agentId={agentId}
-      onInvoked={handleInvoked}
-    />
+    <View style={{ flex: 1, backgroundColor: theme.colors.surface0 }}>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: layout.compact ? 12 : 20 }}
+        onPress={() => setSyncing(!syncing)}
+      >
+        <Text style={{ color: theme.colors.accent }}>
+          {syncing ? "← Browse skills" : "GitHub sync"}
+        </Text>
+      </Pressable>
+      {syncing ? (
+        <SyncPanel key={agentId} agentId={agentId} theme={theme} compact={layout.compact} />
+      ) : (
+        <SkillBrowser
+          theme={theme}
+          frame="screen"
+          padding={layout.compact ? 12 : 20}
+          agentId={agentId}
+          onInvoked={handleInvoked}
+        />
+      )}
+    </View>
   );
 }

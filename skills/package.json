@@ -1,6 +1,6 @@
 {
   "name": "paseo-skills",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "description": "Paseo plugin: lists the skills an agent can use, shows where each comes from, renders its SKILL.md, and invokes it",
   "homepage": "https://github.com/yuruiz/paseo-plugins/tree/main/skills#readme",
@@ -19,6 +19,7 @@
     "shared/",
     "CHANGELOG.md",
     "!**/*.test.ts",
+    "!**/*.test.tsx",
     "OVERVIEW.md",
     "LICENSE"
   ],
@@ -37,10 +38,12 @@
     "@tanstack/react-query": "^5.90.11",
     "@types/node": "^22.0.0",
     "@types/react": "~19.2.0",
+    "@types/react-test-renderer": "19.1.0",
     "oxfmt": "0.46.0",
     "oxlint": "1.61.0",
     "react": "19.1.0",
     "react-native": "0.81.5",
+    "react-test-renderer": "19.1.0",
     "typescript": "^5.9.3",
     "vitest": "4.1.7",
     "zod": "^4.4.3"

@@ -55,3 +55,7 @@ lifetime guard so a completed send cannot close a later popover or lose an unsee
 
 The historical `plan.md` and `execution-ledger.md` describe upstream decisions. This document
 supersedes their additive session-command discovery design.
+
+The full panel also supports [selective GitHub synchronization](github-sync.md). Synchronization
+uses this same discovery result; it does not add remote-only entries to the invocation menu until
+they have been downloaded into a supported local skill directory.

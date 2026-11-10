@@ -1,5 +1,12 @@
 # Fork changes
 
+## 0.5.0
+
+- Selectively upload and download skill folders through a private GitHub repository.
+- Compare file content and executable permissions, with explicit replacement confirmation.
+- Reject stale comparisons and unsafe paths; keep backups of replaced local skills.
+- Persist repository settings and check for updates while the sync screen is open.
+
 ## 0.4.1
 
 - Import upstream 0.4.0 into this repository, retaining its MIT license.

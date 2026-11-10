@@ -39,6 +39,30 @@ entries without a discoverable `SKILL.md` are omitted: a provider's `kind: "skil
 proof. Filesystem discovery does not guarantee a skill is enabled or loaded in the live session.
 See [design and limitations](docs/design.md) for the scan boundaries.
 
+## GitHub sync
+
+Open the full **Skills** tab, then **GitHub sync**. On each daemon machine, install GitHub CLI
+and authenticate with `gh auth login`. Enter an existing private `owner/repository`, initialized
+with a README, and optionally a branch. Reading requires repository Contents access; uploading
+requires write access. The plugin uses GitHub CLI authentication without storing a token.
+
+Choose **Upload to GitHub** or **Download to this machine**, select skills, and apply. The repository
+stores complete folders under `skills/<name>/`, including scripts, references, binary resources,
+and executable permissions. Unselected skills and unrelated repository files are preserved.
+On another machine, configure the same repository and select the skills to download.
+
+The comparison shows matching versions, local-only skills, available downloads, and differing
+versions, with a file list for each difference. It compares content and executable permissions,
+not timestamps: differing versions require choosing which copy to keep. The sync screen checks
+when opened and every five minutes while mounted; **Check for updates** refreshes immediately.
+It never transfers skills automatically.
+
+New downloads use `~/.agents/skills` for Codex, `~/.claude/skills` for Claude, or
+`$HERMES_HOME/skills` for Hermes. Existing discovered skills update at the displayed path.
+Replacement needs a second confirmation. Local backups remain beneath the destination parent's
+`.paseo-sync/versions/` directory, and the result shows their paths. Restore them manually if needed.
+Remote versions remain in Git history. Read [sync behavior and limits](docs/github-sync.md).
+
 ## Develop
 
 From the repository root:
