@@ -16,9 +16,10 @@ export function useHistory(
   repositoryId: string,
   ref: string,
   firstParent = false,
+  baseRef = "auto",
 ) {
   const call = useRpc(historyRpc);
-  const key = JSON.stringify([directory, repositoryId, ref, firstParent]);
+  const key = JSON.stringify([directory, repositoryId, ref, firstParent, baseRef]);
   const generation = useRef(0);
   const fetchingMore = useRef(false);
   const [attempt, setAttempt] = useState(0);
@@ -43,7 +44,7 @@ export function useHistory(
       loading: true,
       loadingMore: false,
     }));
-    void call({ directory, repositoryId, ref, firstParent }).then(
+    void call({ directory, repositoryId, ref, firstParent, baseRef }).then(
       (data) => {
         if (generation.current === request)
           setState({ key, attempt, data, error: null, loading: false, loadingMore: false });
@@ -56,7 +57,7 @@ export function useHistory(
     return () => {
       generation.current++;
     };
-  }, [call, directory, repositoryId, ref, firstParent, key, attempt]);
+  }, [call, directory, repositoryId, ref, firstParent, baseRef, key, attempt]);
   const loadMore = useCallback(async () => {
     const state = current.current;
     if (
@@ -76,6 +77,7 @@ export function useHistory(
         repositoryId,
         ref,
         firstParent,
+        baseRef,
         offset: state.data.commits.length,
         revision: state.data.revision,
       });
@@ -91,7 +93,7 @@ export function useHistory(
     } finally {
       if (generation.current === request) fetchingMore.current = false;
     }
-  }, [call, directory, repositoryId, ref, firstParent, key, attempt]);
+  }, [call, directory, repositoryId, ref, firstParent, baseRef, key, attempt]);
   const refresh = useCallback(() => setAttempt((value) => value + 1), []);
   return {
     ...(state.key === key ? state : { data: null, error: null, loading: true, loadingMore: false }),

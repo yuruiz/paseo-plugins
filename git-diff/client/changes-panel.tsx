@@ -44,14 +44,16 @@ import {
 } from "./changes-model";
 import { ComparisonPicker } from "./comparison-picker";
 import { InputField, setWebTitle, ToolButton } from "./controls";
-import { type CloseTabs, closeTabs, openTab, type TabsState } from "./editor-model";
+import { type CloseTabs, closeTabs, openTab, pinTab } from "./editor-model";
 import { EditorTabs } from "./editor-tabs";
 import { FileMenu, type FileMenuItem, type FileMenuTarget } from "./file-menu";
 import { filePaths } from "./file-paths";
 import { HistoryPanel } from "./history-panel";
 import { fileAppearance, Icon } from "./icons";
 import { previewKind } from "./preview-model";
+import { ReviewProvider } from "./review-comments";
 import { reviewFileKey } from "./review-model";
+import { useReviewSession } from "./review-session";
 import { SettingsPanel } from "./settings-panel";
 import { TabCache } from "./tab-cache";
 import { TabEditor } from "./tab-editor";
@@ -59,8 +61,7 @@ import { panelTokens } from "./theme";
 import { useChanges } from "./use-changes";
 import { usePanelSettings } from "./use-panel-settings";
 import { type ReviewSelection, useReview } from "./use-review";
-import { ViewSwitcher, type WorkspaceView } from "./view-switcher";
-import { ScrollbarStyle, SidebarResizer } from "./web-chrome";
+import { HistoryResizer, ScrollbarStyle, SidebarResizer } from "./web-chrome";
 
 function displayPath(path: string) {
   return path.replace(/\n/g, "↵").replace(/\t/g, "⇥").replace(/\r/g, "␍");
@@ -76,7 +77,18 @@ function statusColor(file: FileChange, theme: PluginTheme) {
       : theme.colors.statusWarning;
 }
 
-export function ChangesPanel(props: PluginWorkspacePanelProps) {
+export function ChangesPanel(
+  props: PluginWorkspacePanelProps & {
+    presentation?: "editor" | "sidebar";
+    onOpenSidebar?(): void;
+    onOpenDiff?(): void;
+  },
+) {
+  const sidebarOpener = useRef(props.onOpenSidebar);
+  sidebarOpener.current = props.onOpenSidebar;
+  useEffect(() => {
+    if (props.presentation === "editor" && props.workspaceId) sidebarOpener.current?.();
+  }, [props.presentation, props.workspaceId]);
   const workspace = useWorkspace(props.workspaceId, ({ directory, name }) => ({ directory, name }));
   if (!workspace)
     return (
@@ -84,14 +96,31 @@ export function ChangesPanel(props: PluginWorkspacePanelProps) {
         <Text style={{ color: props.theme.colors.foregroundMuted }}>工作区不可用。</Text>
       </View>
     );
-  return (
+  const pane = (
     <WorkspaceChanges
       key={workspace.directory}
+      sessionKey={JSON.stringify([props.host.id, props.workspaceId])}
+      settingsKey={props.host.id}
+      presentation={props.presentation}
+      onOpenSidebar={props.onOpenSidebar}
+      onOpenDiff={props.onOpenDiff}
       directory={workspace.directory}
       name={workspace.name}
       theme={props.theme}
       compact={props.layout.compact}
     />
+  );
+  return props.presentation === "sidebar" ? (
+    pane
+  ) : (
+    <ReviewProvider
+      session={JSON.stringify([props.host.id, props.workspaceId])}
+      workspaceId={props.workspaceId}
+      directory={workspace.directory}
+      theme={props.theme}
+    >
+      {pane}
+    </ReviewProvider>
   );
 }
 
@@ -238,7 +267,6 @@ const ChangeItem = memo(function ChangeItem({
         <Text numberOfLines={1} style={[styles.fileText, styles.fileName]}>
           {displayPath(item.label)}
         </Text>
-        <Text style={styles.small}>{item.count}</Text>
       </Pressable>
     );
   if (item.kind !== "file") return null;
@@ -333,25 +361,29 @@ export function WorkspaceChanges(props: {
   name: string;
   theme: PluginTheme;
   compact: boolean;
+  sessionKey?: string;
+  settingsKey?: string;
+  presentation?: "editor" | "sidebar";
+  onOpenSidebar?(): void;
+  onOpenDiff?(): void;
 }) {
-  const preferences = usePanelSettings();
-  const [view, setView] = useState<WorkspaceView>("changes");
-  const [historyOpened, setHistoryOpened] = useState(false);
-  const changesButton = useRef<View>(null);
-  const historyButton = useRef<View>(null);
-  useEffect(() => {
-    if (!historyOpened) return;
-    // Wait for the closing modal to release focus before focusing the visible view.
-    const timer = setTimeout(
-      () => (view === "changes" ? changesButton : historyButton).current?.focus(),
-      0,
-    );
-    return () => clearTimeout(timer);
-  }, [view, historyOpened]);
-  function switchView(next: WorkspaceView) {
-    if (next === "history") setHistoryOpened(true);
-    setView(next);
-  }
+  const preferences = usePanelSettings(props.settingsKey);
+  const session = useReviewSession(props.sessionKey ?? props.directory);
+  const {
+    review,
+    setReview,
+    repositoryId: workingRepositoryId,
+    setRepositoryId: setWorkingRepositoryId,
+  } = session;
+  const [graphHeight, setGraphHeight] = useState(420);
+  const [sidebarHeight, setSidebarHeight] = useState(0);
+  const graphMaxHeight = Math.max(160, sidebarHeight ? sidebarHeight * 0.65 : 700);
+  const visibleGraphHeight = Math.min(graphHeight, graphMaxHeight);
+  const [width, setWidth] = useState(1400);
+  const [graphWidth, setGraphWidth] = useState(520);
+  const [graphVisible, setGraphVisible] = useState(true);
+
+  const narrow = props.compact || width < 1000;
   if (!preferences.loaded)
     return (
       <View
@@ -380,61 +412,150 @@ export function WorkspaceChanges(props: {
       </View>
     );
   const c = panelTokens(props.theme);
-  return (
-    <View style={{ flex: 1, minWidth: 0, minHeight: 0, backgroundColor: c.surface0 }}>
-      <View style={{ flex: 1, minHeight: 0, minWidth: 0 }}>
-        <WorkspacePane active={view === "changes"}>
-          <WorkspaceEditor
-            {...props}
-            preferences={preferences}
-            active={view === "changes"}
-            viewSwitcher={
-              <ViewSwitcher
-                value="changes"
-                onChange={switchView}
-                buttonRef={changesButton}
-                theme={props.theme}
-              />
-            }
+  if (props.presentation === "editor")
+    return (
+      <WorkspaceEditor
+        {...props}
+        preferences={preferences}
+        active
+        review={review}
+        setReview={setReview}
+        session={session}
+        presentation="diff"
+        integrated
+        workingRepositoryId={workingRepositoryId}
+        onOpenDiff={props.onOpenDiff}
+        onOpenSidebar={props.onOpenSidebar}
+        viewSwitcher={
+          <ToolButton
+            theme={props.theme}
+            icon="branch"
+            label="打开 Review 侧栏"
+            onPress={() => props.onOpenSidebar?.()}
           />
-        </WorkspacePane>
-        {historyOpened ? (
-          <WorkspacePane active={view === "history"}>
-            <HistoryPanel
-              {...props}
-              preferences={preferences}
-              viewSwitcher={
-                <ViewSwitcher
-                  value="history"
-                  onChange={switchView}
-                  buttonRef={historyButton}
-                  theme={props.theme}
-                />
-              }
+        }
+      />
+    );
+  if (props.presentation === "sidebar")
+    return (
+      <View
+        testID="git-review-sidebar"
+        onLayout={(event) => setSidebarHeight(event.nativeEvent.layout.height)}
+        style={{ flex: 1, minHeight: 0, backgroundColor: c.surface0 }}
+      >
+        <View
+          style={{
+            height: graphVisible ? visibleGraphHeight : 34,
+            minHeight: graphVisible ? 160 : 34,
+          }}
+        >
+          <HistoryPanel
+            {...props}
+            collapsed={!graphVisible}
+            onToggleCollapse={() => setGraphVisible((value) => !value)}
+            reviewSelection={review}
+            onReview={(selection, id) => {
+              setWorkingRepositoryId(id);
+              setReview(selection);
+            }}
+          />
+        </View>
+        {graphVisible ? (
+          <View style={{ height: 6 }}>
+            <HistoryResizer
+              theme={props.theme}
+              height={visibleGraphHeight}
+              min={160}
+              max={graphMaxHeight}
+              onChange={setGraphHeight}
+              onCommit={() => {}}
+              onReset={() => setGraphHeight(420)}
             />
-          </WorkspacePane>
+          </View>
         ) : null}
+        <WorkspaceEditor
+          {...props}
+          preferences={preferences}
+          active
+          review={review}
+          setReview={setReview}
+          session={session}
+          presentation="files"
+          integrated
+          workingRepositoryId={workingRepositoryId}
+          onOpenDiff={props.onOpenDiff}
+          viewSwitcher={null}
+        />
       </View>
-    </View>
-  );
-}
-
-function WorkspacePane({ active, children }: { active: boolean; children: ReactNode }) {
+    );
   return (
     <View
-      ref={(node) => {
-        if (Platform.OS !== "web" || !node) return;
-        const element = node as unknown as { style: { visibility: string }; inert: boolean };
-        element.style.visibility = active ? "visible" : "hidden";
-        element.inert = !active;
+      testID="git-workbench"
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+      style={{
+        flex: 1,
+        minHeight: 0,
+        minWidth: 0,
+        backgroundColor: c.surface0,
+        flexDirection: narrow ? "column" : "row",
       }}
-      pointerEvents={active ? "auto" : "none"}
-      accessibilityElementsHidden={!active}
-      importantForAccessibility={active ? "auto" : "no-hide-descendants"}
-      {...(Platform.OS === "web" ? { "aria-hidden": !active } : {})}
-      style={{ position: "absolute", inset: 0, minWidth: 0, minHeight: 0, opacity: active ? 1 : 0 }}
     >
-      {children}
+      <View
+        style={[
+          narrow
+            ? { flex: 1, minHeight: 180 }
+            : { width: Math.min(graphWidth, width * 0.6), minWidth: 280 },
+          !graphVisible && { display: "none" },
+        ]}
+      >
+        <HistoryPanel
+          {...props}
+          reviewSelection={review}
+          onReview={(selection, id) => {
+            setWorkingRepositoryId(id);
+            setReview(selection);
+          }}
+        />
+      </View>
+      {!narrow && graphVisible ? (
+        <SidebarResizer
+          theme={props.theme}
+          width={graphWidth}
+          onChange={(next) => setGraphWidth(Math.max(280, Math.min(width * 0.6, next)))}
+          onCommit={() => {}}
+        />
+      ) : null}
+      <View
+        style={{
+          flex: narrow ? 1.5 : 1,
+          minWidth: 0,
+          minHeight: 0,
+          borderLeftWidth: narrow ? 0 : 1,
+          borderTopWidth: narrow ? 1 : 0,
+          borderColor: c.border,
+        }}
+      >
+        <WorkspaceEditor
+          {...props}
+          preferences={preferences}
+          active
+          session={session}
+          presentation="combined"
+          review={review}
+          setReview={setReview}
+          viewSwitcher={
+            <ToolButton
+              theme={props.theme}
+              icon="branch"
+              label={graphVisible ? "收起提交图" : "展开提交图"}
+              active={graphVisible}
+              onPress={() => setGraphVisible((visible) => !visible)}
+            />
+          }
+          integrated
+          workingRepositoryId={workingRepositoryId}
+        />
+      </View>
     </View>
   );
 }
@@ -447,6 +568,14 @@ function WorkspaceEditor({
   preferences,
   active,
   viewSwitcher,
+  integrated = false,
+  workingRepositoryId = ".",
+  review,
+  setReview,
+  session,
+  presentation = "combined",
+  onOpenDiff,
+  onOpenSidebar,
 }: {
   directory: string;
   name: string;
@@ -454,23 +583,30 @@ function WorkspaceEditor({
   compact: boolean;
   preferences: ReturnType<typeof usePanelSettings>;
   active: boolean;
+  integrated?: boolean;
+  workingRepositoryId?: string;
+  review: ReviewSelection | null;
+  setReview(value: ReviewSelection | null): void;
   viewSwitcher: ReactNode;
+  session: ReturnType<typeof useReviewSession>;
+  presentation?: "combined" | "files" | "diff";
+  onOpenDiff?(): void;
+  onOpenSidebar?(): void;
 }) {
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const colors = useMemo(() => panelTokens(theme), [theme]);
   const [width, setWidth] = useState<number | null>(null);
-  const compact = hostCompact || (width !== null && width < 720);
+  const compact = hostCompact || (width !== null && width < (integrated ? 520 : 720));
   const [page, setPage] = useState<"changes" | "diff">("changes");
   const { values: settings, update: updateSettings } = preferences;
   const { tree, automatic, mode, context, ignoreWhitespace } = settings;
-  const [review, setReview] = useState<ReviewSelection | null>(null);
   const [showComparisonPicker, setShowComparisonPicker] = useState(false);
-  const [reviewed, setReviewed] = useState<Set<string>>(() => new Set());
+  const { reviewed, setReviewed, tabs, setTabs } = session;
   const comparison = review ? "head" : settings.comparison;
+  const [filterOpen, setFilterOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const query = useDeferredValue(filter.trim().toLocaleLowerCase());
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const [tabs, setTabs] = useState<TabsState>({ tabs: [], active: null });
   const [linkedFiles, setLinkedFiles] = useState<
     Record<string, { repositoryId: string; path: string; version: string }>
   >({});
@@ -526,11 +662,16 @@ function WorkspaceEditor({
   const pendingFocus = useRef<string | null>(null);
   const focusFilterOnMount = useRef(false);
   useEffect(() => {
-    if (page === "changes" && (compact || settings.sidebarVisible) && focusFilterOnMount.current) {
+    if (
+      filterOpen &&
+      page === "changes" &&
+      (presentation === "files" || compact || settings.sidebarVisible) &&
+      focusFilterOnMount.current
+    ) {
       focusFilterOnMount.current = false;
       inputRef.current?.focus();
     }
-  }, [page, compact, settings.sidebarVisible]);
+  }, [page, compact, settings.sidebarVisible, filterOpen, presentation]);
   const registerRow = useCallback((key: string, node: View | null) => {
     if (!node) {
       rowRefs.current.delete(key);
@@ -560,7 +701,18 @@ function WorkspaceEditor({
           reviewState.changes.refresh();
         },
       }
-    : localChanges;
+    : {
+        ...localChanges,
+        data:
+          integrated && localChanges.data
+            ? {
+                ...localChanges.data,
+                repositories: localChanges.data.repositories.filter(
+                  (repository) => repository.id === workingRepositoryId,
+                ),
+              }
+            : localChanges.data,
+      };
   const repositories = changes.data?.repositories;
   const model = useMemo(() => {
     const repos = repositories ?? [];
@@ -645,15 +797,22 @@ function WorkspaceEditor({
     kind && selectedKey && (linked || (previews[selectedKey] ?? settings.previewDefault)),
   );
   useEffect(() => {
-    if (!initialized.current && model.entries.length) {
+    const tab = tabs.tabs.find((item) => item.key === tabs.active);
+    const absentPreview =
+      tab &&
+      !tab.pinned &&
+      !model.entries.some((entry) => entryKey(entry.repository.id, entry.file.path) === tab.key);
+    if (model.entries.length && (!initialized.current || absentPreview)) {
+      const firstOpen = !initialized.current && !tabs.tabs.length;
       initialized.current = true;
-      setTabs((state) => openTab(state, model.entries[0]));
+      if (firstOpen || (presentation !== "diff" && absentPreview))
+        setTabs((state) => openTab(state, model.entries[0]));
     }
-  }, [model.entries]);
+  }, [model.entries, tabs.tabs, tabs.active, setTabs, presentation]);
   const baseline = reviewResult
     ? {
         from: reviewResult.baseOid?.slice(0, 8) ?? "空树",
-        to: reviewResult.targetOid.slice(0, 8),
+        to: reviewResult.workingTree ? "工作区" : reviewResult.targetOid.slice(0, 8),
         group: reviewResult.title,
       }
     : (comparisons.find((item) => item.value === comparison) ?? comparisons[0]);
@@ -668,7 +827,9 @@ function WorkspaceEditor({
     : 0;
   const effectiveMode =
     compact ||
-    (width !== null && width - (settings.sidebarVisible ? settings.sidebarWidth : 0) < 650)
+    (width !== null &&
+      width - (presentation === "combined" && settings.sidebarVisible ? settings.sidebarWidth : 0) <
+        650)
       ? mode === "split"
         ? "unified"
         : mode
@@ -697,6 +858,7 @@ function WorkspaceEditor({
   );
   const selectFile = useCallback(
     (repositoryId: string, path: string) => {
+      if (presentation === "files") onOpenDiff?.();
       const entry = model.lookup.get(entryKey(repositoryId, path));
       if (!entry) return;
       navigationRequest.current++;
@@ -711,7 +873,7 @@ function WorkspaceEditor({
       setFocusedFile(entryKey(repositoryId, path));
       setPage("diff");
     },
-    [model.lookup],
+    [model.lookup, onOpenDiff, presentation, setTabs],
   );
   function moveFile(delta: number) {
     const next = visibleFiles[Math.max(0, Math.min(visibleFiles.length - 1, fileIndex + delta))];
@@ -794,6 +956,12 @@ function WorkspaceEditor({
     stopPropagation(): void;
   }) {
     if (event.target?.closest?.('[role="menu"]')) return;
+    if (
+      (((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") ||
+        event.key === "Escape") &&
+      (presentation === "diff" || event.target?.closest?.('[data-git-code="true"]'))
+    )
+      return;
     const editing = ["INPUT", "TEXTAREA"].includes(event.target?.tagName ?? "");
     if (event.target?.getAttribute?.("role") === "separator") return;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
@@ -801,7 +969,9 @@ function WorkspaceEditor({
       event.stopPropagation();
       setPage("changes");
       updateSettings({ sidebarVisible: true });
-      focusFilterOnMount.current = (compact && page === "diff") || !settings.sidebarVisible;
+      setFilterOpen(true);
+      focusFilterOnMount.current =
+        !filterOpen || (compact && page === "diff") || !settings.sidebarVisible;
       inputRef.current?.focus();
     } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "w" && selectedKey) {
       event.preventDefault();
@@ -818,13 +988,20 @@ function WorkspaceEditor({
       setTabs((state) => ({ ...state, active: next.key }));
       setFocusedFile(next.key);
     } else if (event.key === "Escape") {
-      if (filter) setFilter("");
-      else if (compact) setPage("changes");
+      if (filterOpen) {
+        event.preventDefault();
+        event.stopPropagation();
+        setFilterOpen(false);
+        setFilter("");
+        panelRef.current?.focus();
+      } else if (compact) setPage("changes");
     } else if (!editing && event.key === "/") {
       event.preventDefault();
       setPage("changes");
       updateSettings({ sidebarVisible: true });
-      focusFilterOnMount.current = (compact && page === "diff") || !settings.sidebarVisible;
+      setFilterOpen(true);
+      focusFilterOnMount.current =
+        !filterOpen || (compact && page === "diff") || !settings.sidebarVisible;
       inputRef.current?.focus();
     } else if (
       ((!editing && event.target?.closest?.('[data-testid="git-file-list"]')) || event.altKey) &&
@@ -1068,6 +1245,7 @@ function WorkspaceEditor({
       <ScrollbarStyle theme={theme} thin={settings.scrollbar === "thin"} />
       {showSettings ? (
         <SettingsPanel
+          separateNavigation={presentation !== "combined"}
           theme={theme}
           values={settings}
           update={updateSettings}
@@ -1098,18 +1276,41 @@ function WorkspaceEditor({
         </View>
       ) : null}
       <View style={styles.body}>
-        {(!compact && settings.sidebarVisible) || (compact && page === "changes") ? (
+        {presentation !== "diff" &&
+        (presentation === "files" ||
+          (!compact && settings.sidebarVisible) ||
+          (compact && page === "changes")) ? (
           <View
             style={[
               styles.rail,
-              { width: Math.min(settings.sidebarWidth, Math.max(180, (width ?? 1000) - 360)) },
+              {
+                width:
+                  presentation === "files"
+                    ? "100%"
+                    : Math.min(settings.sidebarWidth, Math.max(180, (width ?? 1000) - 360)),
+              },
               compact && styles.compactRail,
             ]}
           >
             <View style={styles.titlebar}>
               {viewSwitcher}
-              <Text style={styles.heading}>更改</Text>
+              <Text style={styles.heading}>{review ? "Review" : "Working Changes"}</Text>
               <Text style={styles.count}>{model.entries.length}</Text>
+              <ToolButton
+                theme={theme}
+                icon="search"
+                label="筛选变更文件"
+                active={filterOpen}
+                onPress={() => {
+                  if (filterOpen) {
+                    setFilterOpen(false);
+                    setFilter("");
+                  } else {
+                    focusFilterOnMount.current = true;
+                    setFilterOpen(true);
+                  }
+                }}
+              />
               <ToolButton
                 theme={theme}
                 label={tree ? "切换为列表视图" : "切换为目录树"}
@@ -1143,56 +1344,61 @@ function WorkspaceEditor({
                 />
               ) : null}
             </View>
-            <View style={[styles.tabs, { gap: 4, paddingRight: 4, alignItems: "center" }]}>
-              <View accessibilityRole="tablist" style={{ flexDirection: "row", gap: 18, flex: 1 }}>
-                {comparisons.map((item) => (
-                  <Pressable
-                    key={item.value}
-                    accessibilityRole="tab"
-                    accessibilityLabel={item.label}
-                    ref={(node) => setWebTitle(node, `${item.label} · ${item.from} → ${item.to}`)}
-                    accessibilityState={{ selected: !review && comparison === item.value }}
-                    {...(Platform.OS === "web"
-                      ? {
-                          title: `${item.label} · ${item.from} → ${item.to}`,
-                          "aria-selected": !review && comparison === item.value,
-                        }
-                      : {})}
-                    onPress={() => {
-                      setReview(null);
-                      updateSettings({ comparison: item.value });
-                    }}
-                    style={({ pressed }) => [
-                      styles.tab,
-                      !review && comparison === item.value && styles.activeTab,
-                      pressed && styles.hoveredRow,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.tabText,
-                        !review && comparison === item.value && styles.activeTabText,
+            {!integrated ? (
+              <View style={[styles.tabs, { gap: 4, paddingRight: 4, alignItems: "center" }]}>
+                <View
+                  accessibilityRole="tablist"
+                  style={{ flexDirection: "row", gap: 18, flex: 1 }}
+                >
+                  {comparisons.map((item) => (
+                    <Pressable
+                      key={item.value}
+                      accessibilityRole="tab"
+                      accessibilityLabel={item.label}
+                      ref={(node) => setWebTitle(node, `${item.label} · ${item.from} → ${item.to}`)}
+                      accessibilityState={{ selected: !review && comparison === item.value }}
+                      {...(Platform.OS === "web"
+                        ? {
+                            title: `${item.label} · ${item.from} → ${item.to}`,
+                            "aria-selected": !review && comparison === item.value,
+                          }
+                        : {})}
+                      onPress={() => {
+                        setReview(null);
+                        updateSettings({ comparison: item.value });
+                      }}
+                      style={({ pressed }) => [
+                        styles.tab,
+                        !review && comparison === item.value && styles.activeTab,
+                        pressed && styles.hoveredRow,
                       ]}
                     >
-                      {item.label}
-                    </Text>
-                  </Pressable>
-                ))}
+                      <Text
+                        style={[
+                          styles.tabText,
+                          !review && comparison === item.value && styles.activeTabText,
+                        ]}
+                      >
+                        {item.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <ToolButton
+                  theme={theme}
+                  label="选择比较范围"
+                  text={
+                    compact ||
+                    Math.min(settings.sidebarWidth, Math.max(180, (width ?? 1000) - 360)) >= 220
+                      ? "比较"
+                      : undefined
+                  }
+                  icon="branch"
+                  active={Boolean(review)}
+                  onPress={() => setShowComparisonPicker(true)}
+                />
               </View>
-              <ToolButton
-                theme={theme}
-                label="选择比较范围"
-                text={
-                  compact ||
-                  Math.min(settings.sidebarWidth, Math.max(180, (width ?? 1000) - 360)) >= 220
-                    ? "比较"
-                    : undefined
-                }
-                icon="branch"
-                active={Boolean(review)}
-                onPress={() => setShowComparisonPicker(true)}
-              />
-            </View>
+            ) : null}
             {review ? (
               <View
                 style={{
@@ -1214,28 +1420,32 @@ function WorkspaceEditor({
                 ) : null}
               </View>
             ) : null}
-            <InputField
-              theme={theme}
-              icon="search"
-              inputRef={inputRef}
-              accessibilityLabel="筛选变更文件"
-              placeholder="筛选文件路径…"
-              value={filter}
-              onChangeText={setFilter}
-              containerStyle={styles.filterWrap}
-              autoCapitalize="none"
-              autoCorrect={false}
-              onNavigateMatch={moveSearchMatch}
-            >
-              {filter ? (
+            {filterOpen ? (
+              <InputField
+                theme={theme}
+                icon="search"
+                inputRef={inputRef}
+                accessibilityLabel="筛选变更文件"
+                placeholder="筛选文件路径…"
+                value={filter}
+                onChangeText={setFilter}
+                containerStyle={styles.filterWrap}
+                autoCapitalize="none"
+                autoCorrect={false}
+                onNavigateMatch={moveSearchMatch}
+              >
                 <ToolButton
                   theme={theme}
-                  label="清除筛选"
+                  label="关闭文件筛选"
                   icon="close"
-                  onPress={() => setFilter("")}
+                  onPress={() => {
+                    setFilter("");
+                    setFilterOpen(false);
+                    panelRef.current?.focus();
+                  }}
                 />
-              ) : null}
-            </InputField>
+              </InputField>
+            ) : null}
             {changes.error ? (
               <View accessibilityRole="alert" style={styles.error}>
                 <Icon name="warning" color={colors.statusDanger} />
@@ -1303,7 +1513,7 @@ function WorkspaceEditor({
             </View>
           </View>
         ) : null}
-        {!compact && settings.sidebarVisible ? (
+        {presentation === "combined" && !compact && settings.sidebarVisible ? (
           <SidebarResizer
             width={Math.min(settings.sidebarWidth, Math.max(180, (width ?? 1000) - 360))}
             onChange={sidebarWidth}
@@ -1311,273 +1521,294 @@ function WorkspaceEditor({
             theme={theme}
           />
         ) : null}
-        <View
-          ref={(node) => {
-            if (Platform.OS !== "web" || !node) return;
-            const element = node as unknown as { style: { visibility: string }; inert: boolean };
-            element.style.visibility = compact && page !== "diff" ? "hidden" : "visible";
-            element.inert = compact && page !== "diff";
-          }}
-          accessibilityElementsHidden={compact && page !== "diff"}
-          importantForAccessibility={compact && page !== "diff" ? "no-hide-descendants" : "auto"}
-          pointerEvents={compact && page !== "diff" ? "none" : "auto"}
-          style={[
-            styles.content,
-            compact && page !== "diff" && { position: "absolute", inset: 0, opacity: 0 },
-          ]}
-        >
-          <View style={styles.editorTitlebar}>
-            {(!compact && !settings.sidebarVisible) || (compact && page === "diff") ? (
-              <View style={{ paddingLeft: 8, justifyContent: "center" }}>{viewSwitcher}</View>
-            ) : null}
-            {review && ((!compact && !settings.sidebarVisible) || (compact && page === "diff")) ? (
-              <ToolButton
+        {presentation !== "files" ? (
+          <View
+            ref={(node) => {
+              if (Platform.OS !== "web" || !node) return;
+              const element = node as unknown as { style: { visibility: string }; inert: boolean };
+              element.style.visibility =
+                presentation !== "diff" && compact && page !== "diff" ? "hidden" : "visible";
+              element.inert = presentation !== "diff" && compact && page !== "diff";
+            }}
+            accessibilityElementsHidden={presentation !== "diff" && compact && page !== "diff"}
+            importantForAccessibility={
+              presentation !== "diff" && compact && page !== "diff" ? "no-hide-descendants" : "auto"
+            }
+            pointerEvents={presentation !== "diff" && compact && page !== "diff" ? "none" : "auto"}
+            style={[
+              styles.content,
+              presentation !== "diff" &&
+                compact &&
+                page !== "diff" && { position: "absolute", inset: 0, opacity: 0 },
+            ]}
+          >
+            <View style={styles.editorTitlebar}>
+              {presentation === "diff" ||
+              (!compact && !settings.sidebarVisible) ||
+              (compact && page === "diff") ? (
+                <View style={{ paddingLeft: 8, justifyContent: "center" }}>{viewSwitcher}</View>
+              ) : null}
+              {review &&
+              ((!compact && !settings.sidebarVisible) || (compact && page === "diff")) ? (
+                <ToolButton
+                  theme={theme}
+                  label="选择比较范围"
+                  icon="branch"
+                  active
+                  onPress={() => setShowComparisonPicker(true)}
+                />
+              ) : null}
+              <EditorTabs
+                tabs={tabs.tabs}
+                active={tabs.active}
                 theme={theme}
-                label="选择比较范围"
-                icon="branch"
-                active
-                onPress={() => setShowComparisonPicker(true)}
+                onSelect={(key) => {
+                  navigationRequest.current++;
+                  setTabs((state) => ({ ...state, active: key }));
+                  setFocusedFile(key);
+                }}
+                onPin={(key) => setTabs((state) => pinTab(state, key))}
+                onClose={closeFile}
+                onContextMenu={setMenu}
+                compact={compact}
+                sidebarVisible={settings.sidebarVisible}
+                onToggleSidebar={() =>
+                  presentation === "diff"
+                    ? onOpenSidebar?.()
+                    : compact
+                      ? setPage("changes")
+                      : updateSettings({ sidebarVisible: !settings.sidebarVisible })
+                }
+                onSettings={() => setShowSettings(true)}
+                settingsError={Boolean(preferences.error)}
               />
-            ) : null}
-            <EditorTabs
-              tabs={tabs.tabs}
-              active={tabs.active}
-              theme={theme}
-              onSelect={(key) => {
-                navigationRequest.current++;
-                setTabs((state) => ({ ...state, active: key }));
-                setFocusedFile(key);
-              }}
-              onClose={closeFile}
-              onContextMenu={setMenu}
-              compact={compact}
-              sidebarVisible={settings.sidebarVisible}
-              onToggleSidebar={() =>
-                compact
-                  ? setPage("changes")
-                  : updateSettings({ sidebarVisible: !settings.sidebarVisible })
-              }
-              onSettings={() => setShowSettings(true)}
-              settingsError={Boolean(preferences.error)}
-            />
-          </View>
-          {selected ? (
-            <>
-              <View style={styles.diffToolbar}>
-                <View
-                  style={[styles.inline, styles.fileName]}
-                  {...(Platform.OS === "web"
-                    ? {
-                        title: `${selected.repository.directory}/${selected.file.path}\n${linked ? "工作目录文件" : `${baseline.from} → ${baseline.to}`} · 只读`,
-                      }
-                    : {})}
-                >
-                  <Icon
-                    name={selected.repository.parentId ? "repository" : "file"}
-                    size={12}
-                    color={colors.foregroundMuted}
-                  />
-                  <Text numberOfLines={1} style={[styles.small, styles.fileName]}>
-                    {displayPath(selected.repository.relativePath || name)} /{" "}
-                    {displayPath(selected.file.path)}
-                  </Text>
-                </View>
-                {linked ? <Text style={styles.small}>工作目录文件</Text> : null}
-                {selectedReviewKey ? (
-                  <ToolButton
-                    theme={theme}
-                    label={reviewed.has(selectedReviewKey) ? "取消已阅" : "标记已阅"}
-                    icon="check"
-                    active={reviewed.has(selectedReviewKey)}
-                    onPress={() =>
-                      setReviewed((previous) => {
-                        const next = new Set(previous);
-                        if (next.has(selectedReviewKey)) next.delete(selectedReviewKey);
-                        else next.add(selectedReviewKey);
-                        return next;
-                      })
-                    }
-                  />
-                ) : null}
-                {kind && (!linked || (selectedKey && model.lookup.has(selectedKey))) ? (
-                  <ToolButton
-                    theme={theme}
-                    label={
-                      preview
-                        ? "查看文件差异"
-                        : `预览 ${kind === "markdown" ? "Markdown" : kind === "html" ? "HTML" : "图片"} · ${baseline.to}`
-                    }
-                    icon={preview ? "code" : "preview"}
-                    active={preview}
-                    onPress={() => {
-                      if (linked && selectedKey)
-                        setLinkedFiles((previous) => {
-                          const next = { ...previous };
-                          delete next[selectedKey];
-                          return next;
-                        });
-                      setPreviews((previous) => ({ ...previous, [selectedKey || ""]: !preview }));
-                    }}
-                  />
-                ) : null}
-                {!preview ? (
-                  <>
+            </View>
+            {selected ? (
+              <>
+                <View style={styles.diffToolbar}>
+                  <View
+                    style={[styles.inline, styles.fileName]}
+                    {...(Platform.OS === "web"
+                      ? {
+                          title: `${selected.repository.directory}/${selected.file.path}\n${linked ? "工作目录文件" : `${baseline.from} → ${baseline.to}`} · 只读`,
+                        }
+                      : {})}
+                  >
+                    <Icon
+                      name={selected.repository.parentId ? "repository" : "file"}
+                      size={12}
+                      color={colors.foregroundMuted}
+                    />
+                    <Text numberOfLines={1} style={[styles.small, styles.fileName]}>
+                      {displayPath(selected.repository.relativePath || name)} /{" "}
+                      {displayPath(selected.file.path)}
+                    </Text>
+                  </View>
+                  {linked ? <Text style={styles.small}>工作目录文件</Text> : null}
+                  {selectedReviewKey ? (
                     <ToolButton
                       theme={theme}
-                      label={`当前${effectiveMode === "split" ? "左右对比，切换为统一对比" : "统一对比，切换为左右对比"}`}
-                      icon={effectiveMode === "split" ? "split" : "unified"}
+                      label={reviewed.has(selectedReviewKey) ? "取消已阅" : "标记已阅"}
+                      icon="check"
+                      active={reviewed.has(selectedReviewKey)}
                       onPress={() =>
-                        updateSettings({
-                          mode: mode === "split" ? "unified" : "split",
+                        setReviewed((previous) => {
+                          const next = new Set(previous);
+                          if (next.has(selectedReviewKey)) next.delete(selectedReviewKey);
+                          else next.add(selectedReviewKey);
+                          return next;
                         })
                       }
                     />
+                  ) : null}
+                  {kind && (!linked || (selectedKey && model.lookup.has(selectedKey))) ? (
                     <ToolButton
                       theme={theme}
-                      label={`上一个差异块（Shift+F7）· ${hunkCount ? hunkIndex + 1 : 0}/${hunkCount}`}
-                      icon="up"
-                      disabled={!hunkCount}
-                      onPress={() => moveHunk(-1)}
+                      label={
+                        preview
+                          ? "查看文件差异"
+                          : `预览 ${kind === "markdown" ? "Markdown" : kind === "html" ? "HTML" : "图片"} · ${baseline.to}`
+                      }
+                      icon={preview ? "code" : "preview"}
+                      active={preview}
+                      onPress={() => {
+                        if (linked && selectedKey)
+                          setLinkedFiles((previous) => {
+                            const next = { ...previous };
+                            delete next[selectedKey];
+                            return next;
+                          });
+                        setPreviews((previous) => ({ ...previous, [selectedKey || ""]: !preview }));
+                      }}
                     />
-                    <ToolButton
-                      theme={theme}
-                      label={`下一个差异块（F7）· ${hunkCount ? hunkIndex + 1 : 0}/${hunkCount}`}
-                      icon="down"
-                      disabled={!hunkCount}
-                      onPress={() => moveHunk(1)}
-                    />
-                  </>
+                  ) : null}
+                  {!preview ? (
+                    <>
+                      <ToolButton
+                        theme={theme}
+                        label={`当前${effectiveMode === "split" ? "左右对比，切换为统一对比" : "统一对比，切换为左右对比"}`}
+                        icon={effectiveMode === "split" ? "split" : "unified"}
+                        onPress={() =>
+                          updateSettings({
+                            mode: mode === "split" ? "unified" : "split",
+                          })
+                        }
+                      />
+                      <ToolButton
+                        theme={theme}
+                        label={`上一个差异块（Shift+F7）· ${hunkCount ? hunkIndex + 1 : 0}/${hunkCount}`}
+                        icon="up"
+                        disabled={!hunkCount}
+                        onPress={() => moveHunk(-1)}
+                      />
+                      <ToolButton
+                        theme={theme}
+                        label={`下一个差异块（F7）· ${hunkCount ? hunkIndex + 1 : 0}/${hunkCount}`}
+                        icon="down"
+                        disabled={!hunkCount}
+                        onPress={() => moveHunk(1)}
+                      />
+                    </>
+                  ) : null}
+                </View>
+                {selected.file.oldPath ? (
+                  <View style={styles.rename}>
+                    <Text selectable style={styles.small}>
+                      重命名：{displayPath(selected.file.oldPath)} →{" "}
+                      {displayPath(selected.file.path)}
+                    </Text>
+                  </View>
                 ) : null}
-              </View>
-              {selected.file.oldPath ? (
-                <View style={styles.rename}>
-                  <Text selectable style={styles.small}>
-                    重命名：{displayPath(selected.file.oldPath)} → {displayPath(selected.file.path)}
-                  </Text>
-                </View>
-              ) : null}
-              {selected.repository.recordedHead &&
-              selected.repository.head &&
-              selected.repository.recordedHead !== selected.repository.head ? (
-                <View style={styles.rename}>
-                  <Icon name="pointer" size={12} color={colors.statusWarning} />
-                  <Text style={styles.small}>
-                    子模块指针 {selected.repository.recordedHead.slice(0, 7)} →{" "}
-                    {selected.repository.head.slice(0, 7)} · 以下比较子仓自身 {baseline.from}
-                  </Text>
-                </View>
-              ) : null}
-            </>
-          ) : null}
-          <TabCache
-            key={
-              review ? JSON.stringify([review.repositoryId, reviewResult?.revision]) : comparison
-            }
-            active={selectedKey}
-            open={tabs.tabs.map((tab) => tab.key)}
-            limit={settings.tabCacheSize}
-            stats={editorStats}
-          >
-            {selected && selectedKey ? (
-              <TabEditor
-                tabKey={selectedKey}
-                directory={directory}
-                repositoryId={selected.repository.id}
-                path={selected.file.path}
-                version={selected.file.version}
-                comparison={comparison}
-                revision={
-                  reviewResult
-                    ? { baseOid: reviewResult.baseOid, targetOid: reviewResult.targetOid }
-                    : undefined
-                }
-                linked={Boolean(linked)}
-                preview={preview}
-                kind={kind}
-                settings={settings}
-                theme={theme}
-                mode={effectiveMode}
-                navigation={hunkTarget}
-                previewNavigation={
-                  previewNavigation?.key === selectedKey ? previewNavigation : undefined
-                }
-                onNavigate={(href) => {
-                  void navigatePreview(href);
-                }}
-                onStats={recordStats}
-                onSplitRatioChange={(splitRatio) => updateSettings({ splitRatio })}
-                onSplitRatioCommit={preferences.flush}
-                from={baseline.from}
-                to={baseline.to}
-              />
-            ) : currentTab ? (
-              <View style={styles.emptyState}>
-                <Icon name="file" size={32} color={colors.foregroundMuted} />
-                <Text style={styles.emptyTitle}>此视图没有该文件的更改</Text>
-                <Text style={styles.muted}>
-                  {currentTab.path} · {baseline.group}
-                </Text>
-                <Text style={styles.small}>可以切换比较范围，或关闭这个标签。</Text>
-              </View>
-            ) : (
-              <View style={styles.emptyState}>
-                <Icon
-                  name={
-                    changes.loading
-                      ? "source"
-                      : hasProblems
-                        ? "warning"
-                        : query
-                          ? "search"
-                          : "check"
+                {selected.repository.recordedHead &&
+                selected.repository.head &&
+                selected.repository.recordedHead !== selected.repository.head ? (
+                  <View style={styles.rename}>
+                    <Icon name="pointer" size={12} color={colors.statusWarning} />
+                    <Text style={styles.small}>
+                      子模块指针 {selected.repository.recordedHead.slice(0, 7)} →{" "}
+                      {selected.repository.head.slice(0, 7)} · 以下比较子仓自身 {baseline.from}
+                    </Text>
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+            <TabCache
+              key={
+                review ? JSON.stringify([review.repositoryId, reviewResult?.revision]) : comparison
+              }
+              active={selectedKey}
+              open={tabs.tabs.map((tab) => tab.key)}
+              limit={settings.tabCacheSize}
+              stats={editorStats}
+            >
+              {selected && selectedKey ? (
+                <TabEditor
+                  tabKey={selectedKey}
+                  directory={directory}
+                  repositoryId={selected.repository.id}
+                  path={selected.file.path}
+                  version={selected.file.version}
+                  comparison={comparison}
+                  reviewSession={session.key}
+                  repositoryDirectory={selected.repository.directory}
+                  repositoryHead={selected.repository.head}
+                  revision={
+                    reviewResult
+                      ? {
+                          baseOid: reviewResult.baseOid,
+                          targetOid: reviewResult.targetOid,
+                          workingTree: reviewResult.workingTree,
+                        }
+                      : undefined
                   }
-                  size={40}
-                  color={hasProblems ? colors.statusWarning : colors.foregroundMuted}
+                  linked={Boolean(linked)}
+                  preview={preview}
+                  kind={kind}
+                  settings={settings}
+                  theme={theme}
+                  mode={effectiveMode}
+                  navigation={hunkTarget}
+                  previewNavigation={
+                    previewNavigation?.key === selectedKey ? previewNavigation : undefined
+                  }
+                  onNavigate={(href) => {
+                    void navigatePreview(href);
+                  }}
+                  onStats={recordStats}
+                  onSplitRatioChange={(splitRatio) => updateSettings({ splitRatio })}
+                  onSplitRatioCommit={preferences.flush}
+                  from={baseline.from}
+                  to={baseline.to}
                 />
-                <Text style={styles.emptyTitle}>
-                  {changes.loading
-                    ? "正在读取更改"
-                    : hasProblems
-                      ? "仓库状态未完整读取"
-                      : model.entries.length
-                        ? "选择文件开始审阅"
-                        : query
-                          ? "没有匹配的更改"
-                          : review
-                            ? "这个范围没有文件差异"
-                            : comparison === "staged"
-                              ? "没有已暂存的更改"
-                              : comparison === "unstaged"
-                                ? "没有未暂存的更改"
-                                : "与 HEAD 没有差异"}
-                </Text>
-                <Text style={[styles.muted, styles.emptyDescription]}>
-                  {model.entries.length && !query
-                    ? "从侧栏打开文件；多个文件会保留在独立标签中。"
-                    : query
-                      ? "试试其他文件名或路径。"
-                      : review
-                        ? "点击侧栏的比较按钮调整分支或提交区间。"
-                        : comparison === "staged"
-                          ? "没有已暂存的更改，可以切换查看全部。"
-                          : comparison === "unstaged"
-                            ? "没有未暂存的更改，可以切换查看全部。"
-                            : "工作目录与各仓库 HEAD 一致；可切换已暂存或未暂存，单独查看暂存区。"}
-                </Text>
-                {query ? (
-                  <ToolButton
-                    theme={theme}
-                    label="清除筛选"
-                    text="清除筛选"
-                    onPress={() => setFilter("")}
+              ) : currentTab ? (
+                <View style={styles.emptyState}>
+                  <Icon name="file" size={32} color={colors.foregroundMuted} />
+                  <Text style={styles.emptyTitle}>此视图没有该文件的更改</Text>
+                  <Text style={styles.muted}>
+                    {currentTab.path} · {baseline.group}
+                  </Text>
+                  <Text style={styles.small}>可以切换比较范围，或关闭这个标签。</Text>
+                </View>
+              ) : (
+                <View style={styles.emptyState}>
+                  <Icon
+                    name={
+                      changes.loading
+                        ? "source"
+                        : hasProblems
+                          ? "warning"
+                          : query
+                            ? "search"
+                            : "check"
+                    }
+                    size={40}
+                    color={hasProblems ? colors.statusWarning : colors.foregroundMuted}
                   />
-                ) : null}
-              </View>
-            )}
-          </TabCache>
-        </View>
+                  <Text style={styles.emptyTitle}>
+                    {changes.loading
+                      ? "正在读取更改"
+                      : hasProblems
+                        ? "仓库状态未完整读取"
+                        : model.entries.length
+                          ? "选择文件开始审阅"
+                          : query
+                            ? "没有匹配的更改"
+                            : review
+                              ? "这个范围没有文件差异"
+                              : comparison === "staged"
+                                ? "没有已暂存的更改"
+                                : comparison === "unstaged"
+                                  ? "没有未暂存的更改"
+                                  : "与 HEAD 没有差异"}
+                  </Text>
+                  <Text style={[styles.muted, styles.emptyDescription]}>
+                    {model.entries.length && !query
+                      ? "从侧栏打开文件；多个文件会保留在独立标签中。"
+                      : query
+                        ? "试试其他文件名或路径。"
+                        : review
+                          ? "点击侧栏的比较按钮调整分支或提交区间。"
+                          : comparison === "staged"
+                            ? "没有已暂存的更改，可以切换查看全部。"
+                            : comparison === "unstaged"
+                              ? "没有未暂存的更改，可以切换查看全部。"
+                              : "工作目录与各仓库 HEAD 一致；可切换已暂存或未暂存，单独查看暂存区。"}
+                  </Text>
+                  {query ? (
+                    <ToolButton
+                      theme={theme}
+                      label="清除筛选"
+                      text="清除筛选"
+                      onPress={() => setFilter("")}
+                    />
+                  ) : null}
+                </View>
+              )}
+            </TabCache>
+          </View>
+        ) : null}
       </View>
-      <View style={styles.statusbar}>
+      <View style={[styles.statusbar, presentation === "files" && { display: "none" }]}>
         <View style={[styles.inline, styles.fileName]}>
           <Icon name="branch" size={12} color={colors.foregroundMuted} />
           <Text numberOfLines={1} style={styles.statusText}>

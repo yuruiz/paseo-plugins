@@ -1,6 +1,6 @@
 import { settingsRpc } from "@getpaseo/plugin";
 import { useRpc } from "@getpaseo/plugin/client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { defaultSettings, type PanelSettings, panelSettingsSchema } from "../shared/settings";
 
 const contracts = settingsRpc("git-panel");
@@ -9,10 +9,40 @@ const isDragSetting = (key: string) =>
 
 // Host storage, shared by panels and devices. Queue only the changed fields so a
 // second panel cannot accidentally overwrite unrelated settings with stale values.
-export function usePanelSettings() {
+const sharedPreferences = new Map<string, { values: PanelSettings; listeners: Set<() => void> }>();
+export function usePanelSettings(hostKey = "default") {
+  let shared = sharedPreferences.get(hostKey);
+  if (!shared) {
+    shared = { values: defaultSettings, listeners: new Set() };
+    sharedPreferences.set(hostKey, shared);
+  }
+  const store = shared;
+  const values = useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => {
+        store.listeners.add(listener);
+        return () => {
+          store.listeners.delete(listener);
+        };
+      },
+      [store],
+    ),
+    () => store.values,
+    () => store.values,
+  );
+  const setValues = useCallback(
+    (value: PanelSettings | ((previous: PanelSettings) => PanelSettings)) => {
+      const next = typeof value === "function" ? value(store.values) : value;
+      if (JSON.stringify(next) === JSON.stringify(store.values)) return;
+      store.values = next;
+      store.listeners.forEach((listener) => {
+        listener();
+      });
+    },
+    [store],
+  );
   const read = useRpc(contracts.read);
   const write = useRpc(contracts.write);
-  const [values, setValues] = useState(defaultSettings);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +79,7 @@ export function usePanelSettings() {
     } catch (failure) {
       if (alive.current) setError(failure instanceof Error ? failure.message : String(failure));
     }
-  }, [read]);
+  }, [read, setValues]);
   useEffect(() => {
     void reload();
   }, [reload]);
@@ -108,7 +138,7 @@ export function usePanelSettings() {
         else await flush();
       }
     },
-    [read, write],
+    [read, write, setValues],
   );
   const flushRef = useRef(flush);
   flushRef.current = flush;
@@ -126,12 +156,15 @@ export function usePanelSettings() {
     return () => clearTimeout(timer);
   }, [request, loaded, flush]);
 
-  const update = useCallback((patch: Partial<PanelSettings>) => {
-    pending.current = { ...pending.current, ...patch };
-    setValues((previous) => panelSettingsSchema.parse({ ...previous, ...patch }));
-    setRequest((value) => value + 1);
-    if (Object.keys(patch).some((key) => !isDragSetting(key))) void flushRef.current();
-  }, []);
+  const update = useCallback(
+    (patch: Partial<PanelSettings>) => {
+      pending.current = { ...pending.current, ...patch };
+      setValues((previous) => panelSettingsSchema.parse({ ...previous, ...patch }));
+      setRequest((value) => value + 1);
+      if (Object.keys(patch).some((key) => !isDragSetting(key))) void flushRef.current();
+    },
+    [setValues],
+  );
   const retry = useCallback(() => {
     void reload().then(() => flushRef.current());
   }, [reload]);

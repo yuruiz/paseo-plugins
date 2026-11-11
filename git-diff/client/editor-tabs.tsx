@@ -12,6 +12,7 @@ export function EditorTabs({
   active,
   onSelect,
   onClose,
+  onPin,
   onContextMenu,
   theme,
   compact,
@@ -24,6 +25,7 @@ export function EditorTabs({
   active: string | null;
   onSelect(key: string): void;
   onClose(key: string): void;
+  onPin(key: string): void;
   onContextMenu(target: FileMenuTarget): void;
   theme: PluginTheme;
   compact: boolean;
@@ -152,7 +154,11 @@ export function EditorTabs({
                   accessibilityLabel={`打开标签 ${tab.path}（${tab.repositoryId}）`}
                   accessibilityState={{ selected }}
                   {...(Platform.OS === "web"
-                    ? { title: `${tab.repositoryId} / ${tab.path}`, "aria-selected": selected }
+                    ? {
+                        title: `${tab.repositoryId} / ${tab.path}`,
+                        "aria-selected": selected,
+                        onDoubleClick: () => onPin(tab.key),
+                      }
                     : {})}
                   onPress={() => onSelect(tab.key)}
                   onLongPress={(event) =>
@@ -179,6 +185,7 @@ export function EditorTabs({
                     style={{
                       color: selected ? c.foreground : c.foregroundMuted,
                       fontSize: 12,
+                      fontStyle: tab.pinned ? "normal" : "italic",
                       maxWidth: duplicate ? 100 : 160,
                     }}
                   >
@@ -195,6 +202,14 @@ export function EditorTabs({
                     </Text>
                   ) : null}
                 </Pressable>
+                <ToolButton
+                  theme={theme}
+                  label={tab.pinned ? `已固定标签 ${tab.path}` : `固定标签 ${tab.path}`}
+                  icon="lock"
+                  active={Boolean(tab.pinned)}
+                  disabled={Boolean(tab.pinned)}
+                  onPress={() => onPin(tab.key)}
+                />
                 <ToolButton
                   theme={theme}
                   label={`关闭标签 ${tab.path}（${tab.repositoryId}）`}

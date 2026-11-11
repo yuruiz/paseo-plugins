@@ -16,10 +16,16 @@ export const compareRpc = defineRpc({
         baseRef: z.string().min(1).max(1024).default("auto"),
         strategy: z.enum(["merge-base", "tips"]).default("merge-base"),
       }),
-      z.object({ mode: z.literal("range"), oldest: revisionSchema, newest: revisionSchema }),
+      z.object({
+        mode: z.literal("range"),
+        oldest: revisionSchema,
+        newest: revisionSchema,
+        workingTree: z.boolean().optional(),
+      }),
     ]),
   }),
   output: z.object({
+    workingTree: z.boolean().optional(),
     baseOid: revisionSchema.nullable(),
     targetOid: revisionSchema,
     baseRef: z.string(),
@@ -35,6 +41,7 @@ export type CompareResult = z.infer<typeof compareRpc.output>;
 export const compareFileDiffRpc = defineRpc({
   name: "git.compare-file-diff",
   input: repositoryInput.extend({
+    workingTree: z.boolean().optional(),
     baseOid: revisionSchema.nullable(),
     targetOid: revisionSchema,
     path: z.string().min(1),

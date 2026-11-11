@@ -1,7 +1,31 @@
 import type { DiffLine, FileDiff } from "../shared/contracts";
 import { buildDiffRows, type DiffRow } from "./diff-model";
 
-export type ContextRow = DiffRow | { key: string; gap: number; count: number | null };
+export type ContextDirection = "up" | "down";
+export type GapExpansion = { up: number; down: number };
+export type ContextExpansion = Record<number, number | GapExpansion>;
+export type ContextRow =
+  | DiffRow
+  | { key: string; gap: number; count: number | null; up: boolean; down: boolean };
+
+function gapExpansion(value: number | GapExpansion | undefined, gap: number): GapExpansion {
+  return typeof value === "number"
+    ? { up: gap === 0 ? value : 0, down: gap === 0 ? 0 : value }
+    : (value ?? { up: 0, down: 0 });
+}
+
+export function expandContextGap(
+  expanded: ContextExpansion,
+  gap: number,
+  direction: ContextDirection,
+  all = false,
+): ContextExpansion {
+  const previous = gapExpansion(expanded[gap], gap);
+  return {
+    ...expanded,
+    [gap]: { ...previous, [direction]: all ? Infinity : previous[direction] + 20 },
+  };
+}
 
 function lineId(line: DiffLine) {
   return JSON.stringify([line.kind, line.oldLine, line.newLine, line.content]);
@@ -25,7 +49,7 @@ export function buildContextRows(
   diff: FileDiff,
   full: FileDiff | null,
   split: boolean,
-  expanded: Record<number, number>,
+  expanded: ContextExpansion,
 ): ContextRow[] {
   const rows: ContextRow[] = [];
   const first = diff.hunks[0];
@@ -54,25 +78,28 @@ export function buildContextRows(
     }
     const count =
       lines?.length ?? (hunk ? Math.max(0, Math.min(oldEnd - oldStart, newEnd - newStart)) : null);
-    const shown = Math.min(expanded[index] ?? 0, lines?.length ?? 0);
-    const visible = lines
-      ? index === 0
-        ? lines.slice(lines.length - shown)
-        : lines.slice(0, shown)
-      : [];
-    const gap: ContextRow = {
-      key: `gap:${index}`,
-      gap: index,
-      count: count === null ? null : count - shown,
+    const expansion = gapExpansion(expanded[index], index);
+    const fromStart = Math.min(expansion.down, lines?.length ?? 0);
+    const fromEnd = Math.min(expansion.up, (lines?.length ?? 0) - fromStart);
+    const shown = fromStart + fromEnd;
+    const append = (visible: DiffLine[]) => {
+      for (const line of visible)
+        rows.push({
+          key: `context:${line.oldLine}:${line.newLine}`,
+          left: line,
+          right: split ? line : null,
+        });
     };
-    if (index === 0 && (count === null || count > shown)) rows.push(gap);
-    for (const line of visible)
+    if (lines) append(lines.slice(0, fromStart));
+    if (count === null || count > shown)
       rows.push({
-        key: `context:${line.oldLine}:${line.newLine}`,
-        left: line,
-        right: split ? line : null,
+        key: `gap:${index}`,
+        gap: index,
+        count: count === null ? null : count - shown,
+        up: Boolean(hunk),
+        down: index > 0,
       });
-    if (index !== 0 && (count === null || count > shown)) rows.push(gap);
+    if (lines && fromEnd) append(lines.slice(lines.length - fromEnd));
     if (!hunk) break;
     rows.push(
       ...buildDiffRows([hunk], split).map((row) => ({ ...row, key: `hunk:${index}:${row.key}` })),

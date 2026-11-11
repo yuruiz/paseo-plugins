@@ -6,6 +6,7 @@ import type {
   GitRef,
   HistoryInput,
 } from "../shared/history-contracts";
+import { branchFork } from "./branch-base";
 import { DIFF_OPTIONS, GitError, git } from "./git";
 import { parseHunks, parseNameStatus, parseNumstat } from "./parsers";
 import { digest, MAX_FILE_BYTES } from "./repositories";
@@ -68,7 +69,20 @@ export async function readHistory(directory: string, input: HistoryInput): Promi
             : [],
     ),
   ].sort();
-  const revision = digest([tips, head, branch, refs, input.ref, input.firstParent]);
+  const fork =
+    input.ref === "head" && head
+      ? await branchFork(directory, head, branch, refs, input.baseRef)
+      : undefined;
+  const revision = digest([
+    tips,
+    head,
+    branch,
+    refs,
+    input.ref,
+    input.firstParent,
+    input.baseRef,
+    fork,
+  ]);
   if (input.offset && input.revision !== revision)
     throw new Error("提交历史已变化，请刷新后继续加载。");
   if (!tips.length) return { commits: [], refs, head, branch, revision, hasMore: false };
@@ -89,6 +103,7 @@ export async function readHistory(directory: string, input: HistoryInput): Promi
   ]);
   const commits = parseCommits(output);
   return {
+    fork,
     commits: commits.slice(0, input.limit),
     refs,
     head,

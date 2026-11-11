@@ -1,5 +1,5 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import type { CompareResult } from "../shared/compare-contracts";
 import type { Comparison } from "../shared/contracts";
@@ -11,6 +11,7 @@ import { type DiffLayout, DiffViewer } from "./diff-viewer";
 import { FilePreview } from "./file-preview";
 import { Icon } from "./icons";
 import type { PreviewKind } from "./preview-model";
+import { ReviewableDiff } from "./review-comments";
 import { codeFont, panelTokens } from "./theme";
 import { useFileDiff } from "./use-changes";
 
@@ -36,6 +37,9 @@ export function TabEditor({
   onSplitRatioCommit,
   from,
   to,
+  reviewSession,
+  repositoryDirectory,
+  repositoryHead,
 }: {
   tabKey: string;
   directory: string;
@@ -43,7 +47,7 @@ export function TabEditor({
   path: string;
   version: string;
   comparison: Comparison;
-  revision?: Pick<CompareResult, "baseOid" | "targetOid">;
+  revision?: Pick<CompareResult, "baseOid" | "targetOid" | "workingTree">;
   linked: boolean;
   preview: boolean;
   kind: PreviewKind | null;
@@ -58,8 +62,29 @@ export function TabEditor({
   onSplitRatioCommit(): void;
   from: string;
   to: string;
+  reviewSession: string;
+  repositoryDirectory: string;
+  repositoryHead?: string | null;
 }) {
   const c = panelTokens(theme);
+  const baseRef = revision
+    ? `${revision.baseOid ?? "EMPTY"}..${revision.targetOid}${revision.workingTree ? "+working" : ""}`
+    : null;
+  const reviewScope = useMemo(
+    () => ({
+      session: reviewSession,
+      scope: JSON.stringify([
+        repositoryDirectory,
+        comparison,
+        baseRef,
+        baseRef ? null : repositoryHead,
+      ]),
+      cwd: repositoryDirectory,
+      mode: baseRef ? ("base" as const) : ("uncommitted" as const),
+      baseRef,
+    }),
+    [reviewSession, repositoryDirectory, comparison, baseRef, repositoryHead],
+  );
   const patch = useFileDiff(
     preview
       ? null
@@ -131,29 +156,36 @@ export function TabEditor({
         />
       </View>
     );
-  if (patch.data)
+  const diff = patch.data;
+  if (diff)
     return (
-      <DiffViewer
-        key={comparison}
-        diff={patch.data}
-        loadFullContext={loadFullContext}
-        completeContext={settings.context === 1000000}
-        theme={theme}
-        mode={mode}
-        wrap={settings.wrap}
-        syntaxHighlight={settings.syntaxHighlight}
-        fontSize={settings.fontSize}
-        fontFamily={codeFont(settings)}
-        fontWeight={settings.fontWeight}
-        splitRatio={settings.splitRatio}
-        onSplitRatioChange={onSplitRatioChange}
-        onSplitRatioCommit={onSplitRatioCommit}
-        tabSize={settings.tabSize}
-        lineNumbers={settings.lineNumbers}
-        navigation={navigation}
-        from={from}
-        to={to}
-      />
+      <ReviewableDiff scope={reviewScope} theme={theme} path={path}>
+        {(onComment, hasComment) => (
+          <DiffViewer
+            onComment={onComment}
+            hasComment={hasComment}
+            key={comparison}
+            diff={diff}
+            loadFullContext={loadFullContext}
+            completeContext={settings.context === 1000000}
+            theme={theme}
+            mode={mode}
+            wrap={settings.wrap}
+            syntaxHighlight={settings.syntaxHighlight}
+            fontSize={settings.fontSize}
+            fontFamily={codeFont(settings)}
+            fontWeight={settings.fontWeight}
+            splitRatio={settings.splitRatio}
+            onSplitRatioChange={onSplitRatioChange}
+            onSplitRatioCommit={onSplitRatioCommit}
+            tabSize={settings.tabSize}
+            lineNumbers={settings.lineNumbers}
+            navigation={navigation}
+            from={from}
+            to={to}
+          />
+        )}
+      </ReviewableDiff>
     );
   return (
     <View style={{ flex: 1, padding: 24, gap: 12, alignItems: "center", justifyContent: "center" }}>

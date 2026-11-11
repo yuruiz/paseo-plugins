@@ -6,7 +6,7 @@ import { mixColor, panelTokens } from "./theme";
 
 // Pointer capture keeps dragging stable while the separator itself moves and
 // React rerenders. RN Web's responder can otherwise terminate after the first move.
-function useWebDrag(
+export function useWebDrag(
   start: () => void,
   move: (dx: number) => void,
   end: () => void,
@@ -99,6 +99,7 @@ export function ScrollbarStyle({ theme, thin }: { theme: PluginTheme; thin: bool
     ${panels} *::-webkit-scrollbar-thumb:hover { background-color: var(--git-scroll-hover); }
     ${panels} *::-webkit-scrollbar-corner { background: transparent; }
     :is([data-testid="git-sidebar-resizer"],[data-testid="git-diff-resizer"]) { cursor: col-resize; touch-action: none; }
+    [data-testid="git-history-panel"] :is([data-testid="review-range-top"],[data-testid="review-range-bottom"]) { cursor: ns-resize; touch-action: none; user-select: none; outline: none; }
     [data-testid="git-history-resizer"] { cursor: row-resize; touch-action: none; user-select: none; outline: none; }
   `,
   );
@@ -140,7 +141,7 @@ export function HistoryResizer({
   }
   const webRef = useWebDrag(
     start,
-    (dy) => change(origin.current - dy),
+    (dy) => change(origin.current + dy),
     end,
     () => current.current.onReset(),
     "y",
@@ -150,12 +151,12 @@ export function HistoryResizer({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: start,
-      onPanResponderMove: (_, gesture) => change(origin.current - gesture.dy),
+      onPanResponderMove: (_, gesture) => change(origin.current + gesture.dy),
       onPanResponderRelease: end,
       onPanResponderTerminate: end,
     }),
   ).current;
-  const label = "调整提交详情高度，上下方向键调整，Home 或双击恢复默认";
+  const label = "调整提交图高度，上下方向键调整，Home 或双击恢复默认";
   const active = hovered || dragging || focused;
   return (
     <View
@@ -198,7 +199,7 @@ export function HistoryResizer({
                   change(
                     event.key === "End"
                       ? current.current.max
-                      : current.current.height + (event.key === "ArrowUp" ? 10 : -10),
+                      : current.current.height + (event.key === "ArrowUp" ? -10 : 10),
                   );
                   current.current.onCommit();
                 }

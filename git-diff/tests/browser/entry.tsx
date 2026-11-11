@@ -1,8 +1,9 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
-import { useWindowDimensions } from "react-native";
+import { useWindowDimensions, View } from "react-native";
 import { WorkspaceChanges } from "../../client/changes-panel";
+import { ReviewProvider } from "../../client/review-comments";
 
 declare const document: {
   getElementById(id: string): Parameters<typeof createRoot>[0] | null;
@@ -43,13 +44,35 @@ const theme: PluginTheme = {
 };
 function Preview({ directory }: { directory: string }) {
   const { width } = useWindowDimensions();
+  const props = {
+    directory,
+    name: directory.split("/").at(-1) || directory,
+    theme,
+    compact: width < 640,
+  };
+  if (query.get("layout") === "separate")
+    return (
+      <View
+        style={{ flex: 1, flexDirection: width < 640 ? "column-reverse" : "row", minHeight: 0 }}
+      >
+        <ReviewProvider session={directory} directory={directory} theme={theme}>
+          <WorkspaceChanges {...props} presentation="editor" />
+        </ReviewProvider>
+        <View
+          style={{
+            width: width < 640 ? "100%" : 390,
+            flex: width < 640 ? 1 : undefined,
+            minHeight: 0,
+          }}
+        >
+          <WorkspaceChanges {...props} presentation="sidebar" />
+        </View>
+      </View>
+    );
   return (
-    <WorkspaceChanges
-      directory={directory}
-      name={directory.split("/").at(-1) || directory}
-      theme={theme}
-      compact={width < 640}
-    />
+    <ReviewProvider session={directory} directory={directory} theme={theme}>
+      <WorkspaceChanges {...props} />
+    </ReviewProvider>
   );
 }
 const element = document.getElementById("app");
@@ -57,6 +80,7 @@ if (!element) throw new Error("Missing preview root");
 const root = createRoot(element);
 const response = await fetch("/api/info");
 const info = (await response.json()) as { directory: string };
+(globalThis as unknown as { fixtureDirectory: string }).fixtureDirectory = info.directory;
 root.render(
   <QueryClientProvider client={new QueryClient()}>
     <Preview directory={info.directory} />

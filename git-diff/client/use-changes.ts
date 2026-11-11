@@ -127,7 +127,7 @@ export function useFileDiff(
     repositoryId: string;
     path: string;
     version: string;
-    revision?: Pick<CompareResult, "baseOid" | "targetOid">;
+    revision?: Pick<CompareResult, "baseOid" | "targetOid" | "workingTree">;
     comparison: Comparison;
     context: number;
     ignoreWhitespace: boolean;
@@ -146,6 +146,7 @@ export function useFileDiff(
   const comparison = input?.comparison ?? "head";
   const baseOid = input?.revision?.baseOid;
   const targetOid = input?.revision?.targetOid;
+  const workingTree = input?.revision?.workingTree;
   const context = input?.context ?? 3;
   const ignoreWhitespace = input?.ignoreWhitespace ?? false;
   const [state, setState] = useState<{ key: string; data: FileDiff | null; error: string | null }>({
@@ -170,6 +171,7 @@ export function useFileDiff(
             directory,
             repositoryId,
             path,
+            workingTree,
             baseOid: baseOid ?? null,
             targetOid,
             context,
@@ -208,6 +210,7 @@ export function useFileDiff(
     compareFile,
     baseOid,
     targetOid,
+    workingTree,
     key,
     directory,
     repositoryId,
@@ -223,7 +226,7 @@ export function useFileDiff(
     if (!directory || !repositoryId || !path) throw new Error("没有选中的文件。");
     const options = { directory, repositoryId, path, context: 1000000, ignoreWhitespace };
     return targetOid
-      ? compareFile({ ...options, baseOid: baseOid ?? null, targetOid })
+      ? compareFile({ ...options, baseOid: baseOid ?? null, targetOid, workingTree })
       : call({ ...options, comparison });
   }, [
     call,
@@ -233,6 +236,7 @@ export function useFileDiff(
     path,
     baseOid,
     targetOid,
+    workingTree,
     comparison,
     ignoreWhitespace,
   ]);

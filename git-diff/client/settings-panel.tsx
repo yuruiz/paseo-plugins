@@ -26,6 +26,7 @@ export function SettingsPanel({
   retry,
   reset,
   onClose,
+  separateNavigation = false,
 }: {
   theme: PluginTheme;
   values: PanelSettings;
@@ -35,6 +36,7 @@ export function SettingsPanel({
   retry(): void;
   reset(): void;
   onClose(): void;
+  separateNavigation?: boolean;
 }) {
   const c = panelTokens(theme);
   const [active, setActive] = useState<SettingsTab>("appearance");
@@ -325,7 +327,7 @@ export function SettingsPanel({
             {active === "appearance" ? (
               <>
                 {section("文件浏览", true)}
-                {toggle("sidebarVisible", "显示文件侧栏")}
+                {!separateNavigation ? toggle("sidebarVisible", "显示文件侧栏") : null}
                 {segmented("tree", "文件排列", [
                   { value: false, label: "列表" },
                   { value: true, label: "目录树" },
@@ -335,7 +337,9 @@ export function SettingsPanel({
                   { value: "auto", label: "系统" },
                 ])}
                 <Text style={{ ...hintStyle, marginTop: 14 }}>
-                  拖动侧栏边缘或左右对比中线可调整宽度，松手后自动记住。
+                  {separateNavigation
+                    ? "拖动右侧 Graph 与文件列表之间的分隔线可调整高度；拖动 diff 中线可调整左右比例。"
+                    : "拖动侧栏边缘或左右对比中线可调整宽度，松手后自动记住。"}
                 </Text>
               </>
             ) : active === "code" ? (

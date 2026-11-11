@@ -1,17 +1,26 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Platform,
   Pressable,
   ScrollView,
+  type StyleProp,
   StyleSheet,
   Text,
   type TextInput,
+  type TextStyle,
   View,
 } from "react-native";
 import type { DiffLine, FileDiff } from "../shared/contracts";
-import { buildContextRows, type ContextRow, validateFullContext } from "./context-model";
+import {
+  buildContextRows,
+  type ContextDirection,
+  type ContextExpansion,
+  type ContextRow,
+  expandContextGap,
+  validateFullContext,
+} from "./context-model";
 import { InputField, ToolButton } from "./controls";
 import { buildDiffRows } from "./diff-model";
 import { findMatches } from "./find-model";
@@ -25,8 +34,67 @@ export type DiffLayout = "unified" | "split";
 type ViewerRow = ContextRow;
 const LINE_HEIGHT = 22;
 const HUNK_HEIGHT = 28;
+const CONTEXT_HEIGHT = 44;
 const MAX_COLUMNS = 2000;
 const INITIAL_NAVIGATION = { index: 0, request: 0 };
+
+function ReviewGutter({
+  line,
+  side,
+  source,
+  onComment,
+  hasComment,
+  style,
+  children,
+  accent,
+}: {
+  line: DiffLine | null;
+  side: "old" | "new";
+  source: FileDiff;
+  onComment?: (line: DiffLine, side: "old" | "new", source: FileDiff) => void;
+  hasComment?: (line: DiffLine, side: "old" | "new") => boolean;
+  style: StyleProp<TextStyle>;
+  children: React.ReactNode;
+  accent: string;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const number = line && (side === "old" ? line.oldLine : line.newLine);
+  const enabled = Boolean(onComment && line && number && line.kind !== "meta");
+  return (
+    <Pressable
+      accessibilityRole={enabled ? "button" : undefined}
+      accessibilityLabel={
+        enabled ? `评论${side === "old" ? "原始" : "修改"}第 ${number} 行` : undefined
+      }
+      disabled={!enabled}
+      onPress={() => {
+        if (line && enabled) onComment?.(line, side, source);
+      }}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={{ width: 40, flexShrink: 0, position: "relative" }}
+    >
+      <Text style={style}>{children}</Text>
+      {enabled && (hovered || (line && hasComment?.(line, side))) ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 1,
+            width: 16,
+            bottom: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: accent,
+          }}
+        >
+          <Text style={{ color: "#ffffff", fontSize: 13 }}>+</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
 
 export function DiffViewer({
   diff,
@@ -47,6 +115,8 @@ export function DiffViewer({
   lineNumbers = true,
   loadFullContext,
   completeContext = false,
+  onComment,
+  hasComment,
 }: {
   diff: FileDiff;
   theme: PluginTheme;
@@ -66,11 +136,13 @@ export function DiffViewer({
   lineNumbers?: boolean;
   loadFullContext?(): Promise<FileDiff>;
   completeContext?: boolean;
+  onComment?: (line: DiffLine, side: "old" | "new", source: FileDiff) => void;
+  hasComment?: (line: DiffLine, side: "old" | "new") => boolean;
 }) {
   const [contextState, setContextState] = useState<{
     source: FileDiff;
     full: FileDiff | null;
-    expanded: Record<number, number>;
+    expanded: ContextExpansion;
     loading: boolean;
     error: string | null;
   }>({ source: diff, full: null, expanded: {}, loading: false, error: null });
@@ -81,7 +153,11 @@ export function DiffViewer({
   const contextRequest = useRef(false);
   const full = contextState.source === diff ? contextState.full : null;
   const displayedHunks = full?.hunks ?? diff.hunks;
-  async function expandContext(gap: number, all = false) {
+  async function expandContext(
+    gap: number,
+    all = false,
+    direction: ContextDirection = gap === 0 ? "up" : "down",
+  ) {
     if (contextRequest.current || !loadFullContext) return;
     contextRequest.current = true;
     setContextState((state) => ({ ...state, loading: true, error: null }));
@@ -93,7 +169,7 @@ export function DiffViewer({
         ...state,
         full: loaded,
         loading: false,
-        expanded: { ...state.expanded, [gap]: all ? Infinity : (state.expanded[gap] ?? 0) + 20 },
+        expanded: expandContextGap(state.expanded, gap, direction, all),
       }));
     } catch (error) {
       if (currentDiff.current === diff)
@@ -142,6 +218,11 @@ export function DiffViewer({
   const [horizontalOffsets, setHorizontalOffsets] = useState([0, 0]);
   const ratio = Math.max(0.2, Math.min(0.8, splitRatio));
   const rootRef = useRef<View>(null);
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    setQuery("");
+    rootRef.current?.focus();
+  }, []);
   const unifiedScroll = useRef<ScrollView>(null);
   const originalScroll = useRef<ScrollView>(null);
   const modifiedScroll = useRef<ScrollView>(null);
@@ -220,7 +301,8 @@ export function DiffViewer({
   }, [activeMatch, wrap, fontSize, mode]);
   useEffect(() => {
     if (Platform.OS !== "web" || diff.state !== "text") return;
-    const node = rootRef.current as unknown as {
+    type FindNode = {
+      closest(selector: string): FindNode | null;
       addEventListener(
         type: string,
         handler: (event: {
@@ -232,7 +314,9 @@ export function DiffViewer({
         }) => void,
       ): void;
       removeEventListener(type: string, handler: unknown): void;
-    } | null;
+    };
+    const root = rootRef.current as unknown as FindNode | null;
+    const node = root?.closest('[data-testid="git-changes-panel"]') ?? root;
     const keydown = (event: {
       key: string;
       ctrlKey: boolean;
@@ -240,6 +324,7 @@ export function DiffViewer({
       preventDefault(): void;
       stopPropagation(): void;
     }) => {
+      if (root?.closest('[data-testid="git-tab-pane"][data-active="false"]')) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
         event.preventDefault();
         event.stopPropagation();
@@ -248,13 +333,12 @@ export function DiffViewer({
       } else if (event.key === "Escape" && findOpen) {
         event.preventDefault();
         event.stopPropagation();
-        setFindOpen(false);
-        setQuery("");
+        closeFind();
       }
     };
     node?.addEventListener("keydown", keydown);
     return () => node?.removeEventListener("keydown", keydown);
-  }, [findOpen, diff.state]);
+  }, [findOpen, diff.state, closeFind]);
   function navigateMatch(direction: number) {
     setMatchIndex((index) => (index + direction + matches.length) % (matches.length || 1));
   }
@@ -263,7 +347,8 @@ export function DiffViewer({
     const hunks: number[] = [];
     const sizes = rows.map((row, index) => {
       if ("header" in row) hunks.push(index);
-      const length = "header" in row || "gap" in row ? HUNK_HEIGHT : LINE_HEIGHT + fontSize - 12;
+      const length =
+        "gap" in row ? CONTEXT_HEIGHT : "header" in row ? HUNK_HEIGHT : LINE_HEIGHT + fontSize - 12;
       const result = { index, length, offset };
       offset += length;
       return result;
@@ -350,16 +435,21 @@ export function DiffViewer({
           { flex: right ? 1 - ratio : ratio, backgroundColor: background(line) },
         ]}
       >
-        {lineNumbers ? (
-          <Text
-            selectable
+        {lineNumbers || onComment ? (
+          <ReviewGutter
+            line={line}
+            side={right ? "new" : "old"}
+            source={full ?? diff}
+            onComment={onComment}
+            hasComment={hasComment}
+            accent={colors.accent}
             style={[
               styles.gutter,
               { backgroundColor: background(line, true), color: changeColor(line) },
             ]}
           >
-            {line ? (right ? line.newLine : line.oldLine) : ""}
-          </Text>
+            {lineNumbers && line ? (right ? line.newLine : line.oldLine) : ""}
+          </ReviewGutter>
         ) : null}
         <Text style={[styles.sign, signStyle(line)]}>
           {line?.kind === "added" ? "+" : line?.kind === "removed" ? "−" : " "}
@@ -397,28 +487,39 @@ export function DiffViewer({
   function renderRow({ item, index }: { item: ViewerRow; index: number }) {
     if ("gap" in item)
       return loadFullContext ? (
-        <View style={styles.hunk}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              item.count === null ? "展开文件末尾上下文" : `展开 ${item.count} 行相同代码`
-            }
-            disabled={contextState.loading}
-            onPress={() => void expandContext(item.gap)}
-          >
-            <Text style={styles.contextAction}>
-              {contextState.loading
-                ? "正在读取上下文…"
-                : item.count === null
-                  ? "展开后续上下文"
-                  : `展开相同代码（${item.count} 行）`}
-            </Text>
-          </Pressable>
+        <View style={styles.contextGap}>
+          <View style={styles.contextGutter}>
+            {(["down", "up"] as const)
+              .filter((direction) => item[direction])
+              .map((direction) => (
+                <Pressable
+                  key={direction}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${direction === "up" ? "向上" : "向下"}展开相同代码`}
+                  disabled={contextState.loading}
+                  onPress={() => void expandContext(item.gap, false, direction)}
+                  style={({ pressed }) => [
+                    styles.contextButton,
+                    { backgroundColor: pressed ? colors.selection : "transparent" },
+                  ]}
+                >
+                  <Icon name={direction} color={colors.accent} size={13} />
+                </Pressable>
+              ))}
+          </View>
+          <Text numberOfLines={1} style={styles.contextLabel}>
+            {contextState.loading
+              ? "正在读取上下文…"
+              : item.count === null
+                ? "后续未更改代码"
+                : `${item.count} 行未更改代码`}
+          </Text>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="展开此处全部相同代码"
             disabled={contextState.loading}
             onPress={() => void expandContext(item.gap, true)}
+            style={{ paddingHorizontal: 10 }}
           >
             <Text style={styles.contextAction}>全部展开</Text>
           </Pressable>
@@ -458,27 +559,37 @@ export function DiffViewer({
           activeMatch?.row === index && { borderBottomWidth: 2, borderBottomColor: colors.accent },
         ]}
       >
-        {lineNumbers ? (
-          <Text
-            selectable
+        {lineNumbers || onComment ? (
+          <ReviewGutter
+            line={line}
+            side="old"
+            source={full ?? diff}
+            onComment={onComment}
+            hasComment={hasComment}
+            accent={colors.accent}
             style={[
               styles.gutter,
               { backgroundColor: background(line, true), color: changeColor(line) },
             ]}
           >
-            {line.oldLine}
-          </Text>
+            {lineNumbers ? line.oldLine : ""}
+          </ReviewGutter>
         ) : null}
-        {lineNumbers ? (
-          <Text
-            selectable
+        {lineNumbers || onComment ? (
+          <ReviewGutter
+            line={line}
+            side="new"
+            source={full ?? diff}
+            onComment={onComment}
+            hasComment={hasComment}
+            accent={colors.accent}
             style={[
               styles.gutter,
               { backgroundColor: background(line, true), color: changeColor(line) },
             ]}
           >
-            {line.newLine}
-          </Text>
+            {lineNumbers ? line.newLine : ""}
+          </ReviewGutter>
         ) : null}
         <Text style={[styles.sign, signStyle(line)]}>
           {line.kind === "added" ? "+" : line.kind === "removed" ? "−" : " "}
@@ -563,61 +674,47 @@ export function DiffViewer({
       style={styles.root}
       onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
     >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 4, padding: 4 }}>
-        {findOpen ? (
-          <>
-            <InputField
-              theme={theme}
-              inputRef={findInput}
-              value={query}
-              placeholder="搜索当前文件"
-              accessibilityLabel="搜索当前文件"
-              containerStyle={{ flex: 1 }}
-              onChangeText={(value) => {
-                setQuery(value);
-                setMatchIndex(0);
-                if (value && !full && !completeContext) void expandContext(-1, true);
-              }}
-              onNavigateMatch={navigateMatch}
-            />
-            <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>
-              {contextState.loading
-                ? "读取中…"
-                : `${matches.length ? (matchIndex % matches.length) + 1 : 0}/${matches.length}`}
-            </Text>
-            <ToolButton
-              theme={theme}
-              label="上一个匹配 (Shift+Enter)"
-              text="↑"
-              disabled={!matches.length}
-              onPress={() => navigateMatch(-1)}
-            />
-            <ToolButton
-              theme={theme}
-              label="下一个匹配 (Enter)"
-              icon="chevronDown"
-              disabled={!matches.length}
-              onPress={() => navigateMatch(1)}
-            />
-            <ToolButton
-              theme={theme}
-              label="关闭搜索 (Escape)"
-              icon="close"
-              onPress={() => {
-                setFindOpen(false);
-                setQuery("");
-              }}
-            />
-          </>
-        ) : (
+      {findOpen ? (
+        <View
+          testID="diff-find-bar"
+          style={{ flexDirection: "row", alignItems: "center", gap: 4, padding: 4 }}
+        >
+          <InputField
+            theme={theme}
+            inputRef={findInput}
+            value={query}
+            placeholder="搜索当前文件"
+            accessibilityLabel="搜索当前文件"
+            containerStyle={{ flex: 1 }}
+            onChangeText={(value) => {
+              setQuery(value);
+              setMatchIndex(0);
+              if (value && !full && !completeContext) void expandContext(-1, true);
+            }}
+            onNavigateMatch={navigateMatch}
+          />
+          <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>
+            {contextState.loading
+              ? "读取中…"
+              : `${matches.length ? (matchIndex % matches.length) + 1 : 0}/${matches.length}`}
+          </Text>
           <ToolButton
             theme={theme}
-            label="搜索当前文件 (Ctrl/Cmd+F)"
-            icon="search"
-            onPress={() => setFindOpen(true)}
+            label="上一个匹配 (Shift+Enter)"
+            text="↑"
+            disabled={!matches.length}
+            onPress={() => navigateMatch(-1)}
           />
-        )}
-      </View>
+          <ToolButton
+            theme={theme}
+            label="下一个匹配 (Enter)"
+            icon="chevronDown"
+            disabled={!matches.length}
+            onPress={() => navigateMatch(1)}
+          />
+          <ToolButton theme={theme} label="关闭搜索 (Escape)" icon="close" onPress={closeFind} />
+        </View>
+      ) : null}
       {mode === "split" ? (
         <View style={styles.columnHeaders}>
           <View style={[styles.columnHeading, { width: `${ratio * 100}%` }]}>
@@ -764,6 +861,31 @@ function makeStyles(
     },
     activeHunk: { borderLeftColor: c.accent, backgroundColor: c.selection },
     hunkText: { flex: 1, minWidth: 0, color: c.foregroundMuted, fontSize: 10, fontFamily: c.mono },
+    contextGap: {
+      height: CONTEXT_HEIGHT,
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: c.surface1,
+      borderTopWidth: 1,
+      borderBottomWidth: 1,
+      borderColor: c.border,
+    },
+    contextGutter: {
+      width: 40,
+      height: CONTEXT_HEIGHT,
+      backgroundColor: c.selection,
+      borderRightWidth: 1,
+      borderColor: c.border,
+    },
+    contextButton: { flex: 1, alignItems: "center", justifyContent: "center" },
+    contextLabel: {
+      flex: 1,
+      minWidth: 0,
+      color: c.foregroundMuted,
+      fontFamily: c.mono,
+      fontSize: 11,
+      paddingLeft: 12,
+    },
     contextAction: { color: c.accent, fontSize: 11, lineHeight: HUNK_HEIGHT },
     contextError: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: c.surface1 },
     contextErrorText: { color: c.statusDanger, fontSize: 12 },

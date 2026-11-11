@@ -10,6 +10,7 @@ export async function readFileDiff(
   comparison: Comparison,
   context = 3,
   ignoreWhitespace = false,
+  baseOid?: string,
 ): Promise<FileDiff> {
   const change = repository.files.find((file) => file.path === path);
   if (!change) throw new Error("该文件已不在当前变更列表中，请刷新后重试。");
@@ -61,7 +62,7 @@ export async function readFileDiff(
         [
           "diff",
           ...options,
-          ...comparisonArgs(comparison, Boolean(repository.head)),
+          ...(baseOid ? [baseOid] : comparisonArgs(comparison, Boolean(repository.head))),
           "--",
           ...paths,
         ],

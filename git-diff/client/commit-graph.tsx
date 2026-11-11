@@ -179,6 +179,7 @@ export const CommitGraphRow = memo(function CommitGraphRow({
   showAuthor,
   showDate,
   onSelect,
+  disabled = false,
 }: {
   row: GraphRow;
   graphWidth: number;
@@ -189,6 +190,7 @@ export const CommitGraphRow = memo(function CommitGraphRow({
   matched: boolean;
   showAuthor: boolean;
   showDate: boolean;
+  disabled?: boolean;
   onSelect(oid: string): void;
 }) {
   const c = panelTokens(theme);
@@ -209,6 +211,7 @@ export const CommitGraphRow = memo(function CommitGraphRow({
       {...(Platform.OS === "web"
         ? { "aria-pressed": active, tabIndex: active ? 0 : -1 }
         : { accessibilityState: { selected: active } })}
+      disabled={disabled}
       testID={`git-commit-${row.commit.oid}`}
       onPress={() => onSelect(row.commit.oid)}
       onHoverIn={() => setHovered(true)}

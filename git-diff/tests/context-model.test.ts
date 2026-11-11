@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { buildContextRows, validateFullContext } from "../client/context-model";
+import { buildContextRows, expandContextGap, validateFullContext } from "../client/context-model";
 import { readFileDiff } from "../server/diff";
 import { scanWorkspace } from "../server/repositories";
 import type { FileDiff } from "../shared/contracts";
@@ -102,3 +102,31 @@ it("does not show trailing expansion after discovering EOF, and rejects stale or
   const oversized: FileDiff = { ...full, state: "too_large", hunks: [], message: "补丁超过 2 MiB" };
   expect(() => validateFullContext(original, oversized)).toThrow("补丁超过 2 MiB");
 });
+
+it.each([false, true])(
+  "expands the same middle gap from both directions without overlap (split=%s)",
+  async (split) => {
+    const { original, full } = await patches();
+    let expansion = expandContextGap({}, 1, "down");
+    expansion = expandContextGap(expansion, 1, "up");
+    const rows = buildContextRows(original, full, split, expansion);
+    expect(rows.filter((row) => "gap" in row)).toMatchObject([
+      { gap: 0, up: true, down: false },
+      { gap: 1, count: 13, up: true, down: true },
+      { gap: 2, up: false, down: true },
+    ]);
+    const middle = rows.flatMap((row) =>
+      "left" in row && row.left?.oldLine && row.left.oldLine > 44 && row.left.oldLine < 98
+        ? [row.left.oldLine]
+        : [],
+    );
+    expect(middle).toEqual([
+      ...Array.from({ length: 20 }, (_, i) => i + 45),
+      ...Array.from({ length: 20 }, (_, i) => i + 78),
+    ]);
+    expansion = expandContextGap(expansion, 1, "up");
+    const joined = buildContextRows(original, full, split, expansion);
+    expect(joined.some((row) => "gap" in row && row.gap === 1)).toBe(false);
+    expect(new Set(joined.map((row) => row.key)).size).toBe(joined.length);
+  },
+);

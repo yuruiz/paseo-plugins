@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closeTab, closeTabs, openTab, type TabsState } from "../client/editor-model";
+import { closeTab, closeTabs, openTab, pinTab, type TabsState } from "../client/editor-model";
 import { filePaths } from "../client/file-paths";
 import { hasMermaid } from "../client/mermaid-preview";
 import { markdownHtml, previewDocument } from "../client/preview-model";
@@ -33,11 +33,26 @@ function entry(id: string, path: string) {
   return { repository, file: repository.files[0] };
 }
 describe("editor tabs", () => {
+  it("replaces the preview while preserving pinned tabs", () => {
+    let state = openTab({ tabs: [], active: null }, entry(".", "a.ts"));
+    state = openTab(state, entry(".", "b.ts"));
+    expect(state.tabs.map((tab) => tab.path)).toEqual(["b.ts"]);
+    state = pinTab(state, state.active ?? "");
+    state = openTab(state, entry(".", "c.ts"));
+    state = openTab(state, entry("child", "c.ts"));
+    expect(state.tabs.map((tab) => [tab.repositoryId, tab.path])).toEqual([
+      [".", "b.ts"],
+      ["child", "c.ts"],
+    ]);
+    state = openTab(state, entry(".", "b.ts"));
+    expect(state.tabs).toHaveLength(2);
+    expect(state.tabs[0].pinned).toBe(true);
+  });
   it("appends distinct files, distinguishes submodule paths and reuses an existing tab", () => {
     const a = entry(".", "src/index.ts");
     const b = entry("child", "src/index.ts");
     let state: TabsState = { tabs: [], active: null };
-    state = openTab(openTab(state, a), b);
+    state = openTab(pinTab(openTab(state, a), openTab(state, a).active ?? ""), b);
     expect(state.tabs).toHaveLength(2);
     const previous = state.tabs;
     state = openTab(state, a);
@@ -47,7 +62,10 @@ describe("editor tabs", () => {
   });
   it("closing active tabs selects their neighbor and closing all stays empty", () => {
     let state: TabsState = { tabs: [], active: null };
-    for (const path of ["a.ts", "b.ts", "c.ts"]) state = openTab(state, entry(".", path));
+    for (const path of ["a.ts", "b.ts", "c.ts"]) {
+      state = openTab(state, entry(".", path));
+      state = pinTab(state, state.active ?? "");
+    }
     state = { ...state, active: state.tabs[1].key };
     state = closeTab(state, state.active ?? "");
     expect(state.tabs.find((tab) => tab.key === state.active)?.path).toBe("c.ts");
@@ -58,7 +76,10 @@ describe("editor tabs", () => {
   });
   it("applies bulk closes to the context tab while preserving or replacing the active tab", () => {
     let state: TabsState = { tabs: [], active: null };
-    for (const path of ["a.ts", "b.ts", "c.ts", "d.ts"]) state = openTab(state, entry(".", path));
+    for (const path of ["a.ts", "b.ts", "c.ts", "d.ts"]) {
+      state = openTab(state, entry(".", path));
+      state = pinTab(state, state.active ?? "");
+    }
     const [a, b, c, d] = state.tabs;
     expect(closeTabs(state, b.key, "right")).toEqual({ tabs: [a, b], active: b.key });
     expect(closeTabs(state, c.key, "left")).toEqual({ tabs: [c, d], active: d.key });

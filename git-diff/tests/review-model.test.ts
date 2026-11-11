@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { reviewFileKey, reviewSnapshot } from "../client/review-model";
+import { defaultBranchReview, reviewFileKey, reviewSnapshot } from "../client/review-model";
 import { compareRpc } from "../shared/compare-contracts";
 import { snapshotSchema } from "../shared/contracts";
 
@@ -87,4 +87,43 @@ it("isolates viewed state across repositories and commit pairs even for identica
     reviewFileKey(".", "base1:tip1", "src/other.ts"),
   ];
   expect(new Set(keys).size).toBe(4);
+});
+
+it("selects every branch commit and working changes even when the oldest commit is not loaded", () => {
+  const oldest = "c".repeat(40);
+  const result = defaultBranchReview(
+    {
+      head: target,
+      commits: [],
+      fork: { baseRef: "main", oid, oldestOid: oldest, commitCount: 201, message: null },
+    },
+    "modules/lib",
+  );
+  expect(result).toEqual({
+    repositoryId: "modules/lib",
+    selection: { mode: "range", oldest, newest: target, workingTree: true },
+  });
+});
+it("defaults to working changes when there are no branch-exclusive commits or no known fork", () => {
+  expect(
+    defaultBranchReview(
+      {
+        head: target,
+        commits: [],
+        fork: { baseRef: "main", oid: target, commitCount: 0, message: null },
+      },
+      ".",
+    ),
+  ).toBeNull();
+  expect(
+    defaultBranchReview(
+      {
+        head: target,
+        commits: [],
+        fork: { baseRef: "main", oid: null, commitCount: null, message: "当前为基准分支" },
+      },
+      ".",
+    ),
+  ).toBeNull();
+  expect(defaultBranchReview({ head: null, commits: [] }, ".")).toBeNull();
 });

@@ -1,20 +1,20 @@
 # Local validation
 
-Version 0.4.1 validated on 2026-11-07 with Paseo daemon 0.15.2 on macOS.
+Validated on 2026-11-11. TypeScript, Biome and 108 tests passed across 17 files. The installed `git-diff` runtime was hot-reloaded from this checkout and reported `running`.
 
-- Version synchronization, TypeScript, Biome and 89 tests passed (13 files).
-- Git integration coverage includes divergent branches, merge-base versus tip comparison, remote default detection and master fallback, inclusive ranges including root commits, first-parent merge semantics, immutable snapshots, literal/renamed/deleted paths, binary and large files, whitespace, invalid inputs, detached HEAD, ignored submodules and shallow history.
-- Three adapter tests prevent working files and live gitlink warnings from entering historical file lists, prevent fallback to working data while loading or failing, and isolate viewed marks by repository and commit pair.
-- The original Changes view is again the default. The view switcher matches upstream. Comparison results reuse the original file tree, tabs, tab cache, toolbar, diff renderer, sidebar resizer and keyboard navigation. The standalone comparison screen has been removed.
-- Browser verification used an isolated Git fixture with dirty working files and real RPC handlers. Checked 1440×1000 dark and 390×844 light layouts, the original default view, tree/list switching, multiple tabs, pinned branch diffs, direct tips, viewed-state isolation, two-click inclusive ranges, reversed-range errors, returning to working content and mobile back navigation/range selection. No browser page errors.
-- In particular, switching ranges cannot retain a stale historical patch in a hidden tab. Historical diffs do not show the current working file through the original preview control; historical preview and Finder actions are unavailable, while working mode retains its original actions.
-- Installed runtime `git-diff` is checked through `npm run verify:review -- <fixture-directory>` for the live client contribution, branch and range RPCs, text diff and rejected range/path inputs.
+Browser checks used the real Git service with an isolated fixture and the current repository. Checked 1600×1000 and 390×844 layouts, with no page errors:
 
-Screenshots and temporary browser checks live in the repository's ignored
-`.cache/git-diff-work/` directory on the SSD. The restored UI report is
-`restored-ui-validation.json`; screenshots use the `restored-` prefix.
-UI verification used the browser preview with real backend handlers. The native
-Paseo app itself was not automated, and a native iOS/Android device was not available.
+- The Explorer panel stacks graph/history above the file list; the workspace panel renders the central diff. Range, file selection, tabs, viewed marks and appearance settings share state. Closing a tab does not reopen it from the other panel.
+- Default current-branch review includes every exclusive commit and working changes. A 201-commit fixture verified automatic paging at offsets 0, 100 and 200, full range endpoints and exclusion of base files. Manual range selection survives refresh.
+- History controls occupy one 34px toolbar. Repository, scope and baseline live in options; search opens on demand or Cmd/Ctrl+F and closes with Escape. Browser checks cover scope switching, default full review, collapse/restoration and narrow layouts.
+- Removed the graph footer hint row. File filtering is hidden until its toolbar button, Cmd/Ctrl+F or `/`; Escape and the close button clear and hide it. Browser checks cover focus restoration, file restoration and independent graph/diff search.
+- The graph/file divider follows upward and downward mouse motion, including after viewport height clamping.
+- All-branch lanes, current-branch filtering, first-parent fork markers, disabled shared history, range handles, click/Shift/drag selection, keyboard adjustment, graph collapse/restoration and edge auto-scroll.
+- Upward/downward context expansion from both ends of a gap, correct remaining counts and merging without duplicate lines in unified and split models.
+- Line comments on the old and new sides capture a code snapshot and persist through Paseo settings. Checked save/edit, save conflicts retaining typed text, page reload restoring comments, failed feedback preserving drafts and successful retry clearing sent comments.
 
-Viewed marks last within the panel and are cleared on close. Remote tracking refs
-are not fetched automatically.
+Feedback browser tests use an SDK substitute, so they do not message real agents. Unit validation checks the generated payload against Paseo's native `AgentAttachmentSchema`, including old/new side identity, line numbers, hunk header and surrounding lines. A live agent feedback delivery and native iOS/Android client were not exercised.
+
+Git integration coverage includes branch comparisons, inclusive first-parent ranges, merges, pagination, empty and shallow histories, submodules, working/untracked files, cache invalidation, renames, literal paths, binary files, size limits and whitespace handling.
+
+Screenshots and local browser scripts are in the ignored `.cache/gitlens-reference/` directory. Validation temporary files use `.cache/git-diff-interaction/temp/` on the data disk.

@@ -19,23 +19,29 @@ import { RepositoryScanCache, resolveFile, scanWorkspace } from "./repositories"
 export class GitChangesService {
   private readonly commits = new Map<string, Promise<CommitDetails>>();
 
-  private async historyRepository(input: { directory: string; repositoryId: string }) {
-    const snapshot = await this.snapshot({ directory: input.directory, comparison: "head" });
+  private async historyRepository(
+    input: { directory: string; repositoryId: string },
+    force = false,
+  ) {
+    const snapshot = await this.snapshot({ directory: input.directory, comparison: "head", force });
     const repository = snapshot.repositories.find((repo) => repo.id === input.repositoryId);
     if (repository?.state !== "ready") throw new Error("所属仓库不可用，请刷新后重试。");
     return repository;
   }
 
   async compare(input: CompareInput) {
-    const repository = await this.historyRepository(input);
-    return readComparison(repository.directory, input);
+    const repository = await this.historyRepository(
+      input,
+      input.selection.mode === "range" && Boolean(input.selection.workingTree),
+    );
+    return readComparison(repository.directory, input, repository);
   }
 
   async compareDiff(input: CompareDiffInput) {
-    const repository = await this.historyRepository(input);
+    const repository = await this.historyRepository(input, Boolean(input.workingTree));
     const key = JSON.stringify(["compare", repository.directory, input]);
     const cached = this.patches.get(key);
-    if (cached) return cached;
+    if (cached && !input.workingTree) return cached;
     const diff = await readComparisonDiff(
       repository.directory,
       input.baseOid,
@@ -43,8 +49,10 @@ export class GitChangesService {
       input.path,
       input.context,
       input.ignoreWhitespace,
+      input.workingTree,
+      repository,
     );
-    this.patches.set(key, diff);
+    if (!input.workingTree) this.patches.set(key, diff);
     return diff;
   }
 

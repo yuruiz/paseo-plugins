@@ -1,6 +1,12 @@
 import { entryKey } from "./changes-model";
 
-export type EditorTab = { key: string; repositoryId: string; path: string; label: string };
+export type EditorTab = {
+  key: string;
+  repositoryId: string;
+  path: string;
+  label: string;
+  pinned?: boolean;
+};
 export type TabsState = { tabs: EditorTab[]; active: string | null };
 export type CloseTabs = "close" | "others" | "right" | "left" | "all";
 export function openTab(
@@ -10,18 +16,19 @@ export function openTab(
   const key = entryKey(entry.repository.id, entry.file.path);
   if (state.active === key) return state;
   const exists = state.tabs.some((tab) => tab.key === key);
+  const tab: EditorTab = {
+    key,
+    repositoryId: entry.repository.id,
+    path: entry.file.path,
+    label: entry.file.path.split("/").at(-1) || entry.file.path,
+  };
+  const preview = state.tabs.findIndex((item) => !item.pinned);
   return {
     tabs: exists
       ? state.tabs
-      : [
-          ...state.tabs,
-          {
-            key,
-            repositoryId: entry.repository.id,
-            path: entry.file.path,
-            label: entry.file.path.split("/").at(-1) || entry.file.path,
-          },
-        ],
+      : preview < 0
+        ? [...state.tabs, tab]
+        : state.tabs.map((item, index) => (index === preview ? tab : item)),
     active: key,
   };
 }
@@ -53,5 +60,12 @@ export function closeTabs(state: TabsState, key: string, action: CloseTabs): Tab
         : (state.tabs.slice(Math.max(0, activeIndex)).find((tab) => tabs.includes(tab))?.key ??
           tabs.at(-1)?.key ??
           null),
+  };
+}
+
+export function pinTab(state: TabsState, key: string): TabsState {
+  return {
+    ...state,
+    tabs: state.tabs.map((tab) => (tab.key === key ? { ...tab, pinned: true } : tab)),
   };
 }

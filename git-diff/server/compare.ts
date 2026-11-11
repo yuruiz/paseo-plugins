@@ -1,6 +1,11 @@
 import { devNull } from "node:os";
+import { defaultBase } from "./branch-base";
+
+export { defaultBase } from "./branch-base";
+
 import type { CompareInput, CompareResult } from "../shared/compare-contracts";
-import type { FileChange } from "../shared/contracts";
+import type { FileChange, RepositorySnapshot } from "../shared/contracts";
+import { readFileDiff } from "./diff";
 import { DIFF_OPTIONS, git } from "./git";
 import { readCommitDiff } from "./history";
 import { parseNameStatus, parseNumstat } from "./parsers";
@@ -18,39 +23,16 @@ async function resolveCommit(directory: string, ref: string): Promise<string> {
   }
 }
 
-export async function defaultBase(directory: string): Promise<string> {
-  const remoteHead = (
-    await git(directory, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], {
-      acceptDifference: true,
-    })
-  ).trim();
-  const refs = (
-    await git(directory, ["for-each-ref", "--format=%(refname)", "refs/heads/", "refs/remotes/"])
-  )
-    .trim()
-    .split("\n");
-  for (const candidate of [
-    remoteHead,
-    "refs/heads/main",
-    "refs/heads/master",
-    "refs/remotes/origin/main",
-    "refs/remotes/origin/master",
-  ])
-    if (candidate && refs.includes(candidate)) return candidate;
-  throw new Error("未找到默认分支，请手动选择基准分支。");
-}
-
 async function comparisonFiles(
   directory: string,
   base: string,
   target: string,
+  workingTree = false,
 ): Promise<FileChange[]> {
-  const revisions = [base, target];
+  const revisions = workingTree ? [base] : [base, target];
   const [names, numbers] = await Promise.all([
     git(directory, [
-      "diff-tree",
-      "--no-commit-id",
-      "-r",
+      ...(workingTree ? ["diff"] : ["diff-tree", "--no-commit-id", "-r"]),
       ...DIFF_OPTIONS,
       "--name-status",
       "-z",
@@ -58,9 +40,7 @@ async function comparisonFiles(
       "--",
     ]),
     git(directory, [
-      "diff-tree",
-      "--no-commit-id",
-      "-r",
+      ...(workingTree ? ["diff"] : ["diff-tree", "--no-commit-id", "-r"]),
       ...DIFF_OPTIONS,
       "--numstat",
       "-z",
@@ -87,6 +67,7 @@ async function emptyTree(directory: string): Promise<string> {
 export async function readComparison(
   directory: string,
   input: CompareInput,
+  repository?: RepositorySnapshot,
 ): Promise<CompareResult> {
   const branch =
     (
@@ -146,20 +127,32 @@ export async function readComparison(
     commitCount = index + 1;
     title = `${oldest.slice(0, 8)} … ${targetOid.slice(0, 8)} · ${commitCount} 个提交（含首尾）`;
   }
+  const workingTree = input.selection.mode === "range" && Boolean(input.selection.workingTree);
+  if (workingTree && targetOid !== (await resolveCommit(directory, "HEAD")))
+    throw new Error("包含未提交改动时，终点必须是当前 HEAD。");
   const files = await comparisonFiles(
     directory,
     baseOid ?? (await emptyTree(directory)),
     targetOid,
+    workingTree,
   );
+  if (workingTree) {
+    const version = digest([baseOid, targetOid, repository?.files]);
+    for (const file of files) file.version = version;
+    for (const file of repository?.files ?? [])
+      if (file.status === "untracked" && !files.some((item) => item.path === file.path))
+        files.push(file);
+  }
   return {
+    workingTree,
     baseOid,
     targetOid,
     baseRef,
     branch,
-    title,
+    title: title + (workingTree ? " → 工作区" : ""),
     commitCount,
     files,
-    revision: digest([baseOid, targetOid]),
+    revision: digest([baseOid, targetOid, workingTree ? repository?.files : null]),
   };
 }
 
@@ -170,11 +163,19 @@ export async function readComparisonDiff(
   path: string,
   context: number,
   ignoreWhitespace: boolean,
+  workingTree = false,
+  repository?: RepositorySnapshot,
 ) {
   // Resolve/validate immutable object IDs again because the repository may have been pruned.
   const target = await resolveCommit(directory, targetOid);
   const base = baseOid ? await resolveCommit(directory, baseOid) : await emptyTree(directory);
-  const files = await comparisonFiles(directory, base, target);
+  const files = await comparisonFiles(directory, base, target, workingTree);
+  if (workingTree && repository) {
+    for (const file of repository.files)
+      if (file.status === "untracked" && !files.some((item) => item.path === file.path))
+        files.push(file);
+    return readFileDiff({ ...repository, files }, path, "head", context, ignoreWhitespace, base);
+  }
   return readCommitDiff(
     directory,
     { oid: target, parents: [base], files },

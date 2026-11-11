@@ -230,3 +230,64 @@ it("explains unavailable shallow parents instead of treating their entire tree a
   expect(details.files).toEqual([]);
   expect(details.diffMessage).toContain("浅克隆");
 });
+
+it("marks the first shared parent and counts only branch commits across history pages", async () => {
+  const { directory, history } = await setup();
+  await put(directory, "base.txt", "base\n");
+  await commit(directory, "base");
+  const fork = await head(directory);
+  await command(directory, "checkout", "-qb", "feature");
+  await put(directory, "feature.txt", "one\n");
+  await commit(directory, "feature one");
+  const oldest = await head(directory);
+  await put(directory, "feature.txt", "two\n");
+  await commit(directory, "feature two");
+  const first = await history({ ref: "head", firstParent: true, limit: 1 });
+  expect(first.fork).toEqual({
+    baseRef: "refs/heads/main",
+    oid: fork,
+    oldestOid: oldest,
+    commitCount: 2,
+    message: null,
+  });
+  const next = await history({
+    ref: "head",
+    firstParent: true,
+    limit: 2,
+    offset: 1,
+    revision: first.revision,
+  });
+  expect(next.fork).toEqual(first.fork);
+  expect(next.commits.at(-1)?.oid).toBe(fork);
+  await command(directory, "checkout", "-qb", "stack");
+  const empty = await history({ ref: "head", firstParent: true, baseRef: "refs/heads/feature" });
+  expect(empty.fork).toMatchObject({ oid: empty.head, commitCount: 0 });
+  await command(directory, "checkout", "main");
+  expect((await history({ ref: "head", firstParent: true })).fork).toMatchObject({
+    oid: null,
+    commitCount: null,
+    message: "当前为基准分支",
+  });
+});
+
+it("keeps the branch boundary on the first-parent chain after merging the base", async () => {
+  const { directory, history } = await setup();
+  await put(directory, "base.txt", "base\n");
+  await commit(directory);
+  const fork = await head(directory);
+  await command(directory, "checkout", "-qb", "feature");
+  await put(directory, "feature.txt", "one\n");
+  await commit(directory);
+  await command(directory, "checkout", "main");
+  await put(directory, "main.txt", "new main\n");
+  await commit(directory);
+  await command(directory, "checkout", "feature");
+  await command(directory, "merge", "--no-ff", "main", "-m", "merge base");
+  const result = await history({ ref: "head", firstParent: true });
+  expect(result.fork).toMatchObject({ oid: fork, commitCount: 2 });
+  expect(result.commits[2].oid).toBe(fork);
+  expect((await history({ ref: "head", baseRef: "refs/heads/missing" })).fork).toMatchObject({
+    oid: null,
+    commitCount: null,
+  });
+});

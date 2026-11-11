@@ -236,3 +236,28 @@ it("does not mistake shallow boundaries for root commits", async () => {
     ),
   ).rejects.toThrow("本地没有");
 });
+
+it("reviews committed and working changes together and never caches a working patch", async () => {
+  const { directory, compare, diff } = await setup();
+  await put(directory, "a.txt", "base\n");
+  await commit(directory);
+  await put(directory, "a.txt", "committed\n");
+  await commit(directory);
+  const newest = await head(directory);
+  await put(directory, "a.txt", "working\n");
+  await put(directory, "new.txt", "untracked\n");
+  const result = await compare({ mode: "range", oldest: newest, newest, workingTree: true });
+  expect(result.files.map((file) => file.path).sort()).toEqual(["a.txt", "new.txt"]);
+  expect((await diff(result.baseOid, newest, "a.txt", ".", { workingTree: true })).patch).toContain(
+    "+working",
+  );
+  expect(
+    (await diff(result.baseOid, newest, "new.txt", ".", { workingTree: true })).patch,
+  ).toContain("+untracked");
+  await put(directory, "a.txt", "changed again\n");
+  const refreshed = await compare({ mode: "range", oldest: newest, newest, workingTree: true });
+  expect(refreshed.revision).not.toBe(result.revision);
+  expect((await diff(result.baseOid, newest, "a.txt", ".", { workingTree: true })).patch).toContain(
+    "+changed again",
+  );
+});

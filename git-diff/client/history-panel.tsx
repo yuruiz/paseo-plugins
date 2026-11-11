@@ -1,696 +1,662 @@
 import type { PluginTheme } from "@getpaseo/plugin";
-import { copyText } from "@getpaseo/plugin/client/react-native";
-import {
-  type ReactNode,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { FlatList, Platform, ScrollView, Text, type TextInput, View } from "react-native";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { FlatList, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import type { GitRef } from "../shared/history-contracts";
-import { defaultSettings } from "../shared/settings";
-import { CommitDiff, CommitSummary, HistoryNotice } from "./commit-details";
 import { COMMIT_ROW_HEIGHT, CommitGraphRow } from "./commit-graph";
 import { InputField, ToolButton } from "./controls";
 import { buildCommitGraph, type GraphRow, matchesCommit } from "./graph-model";
 import { Icon } from "./icons";
-import { SettingsPanel } from "./settings-panel";
+import { defaultBranchReview } from "./review-model";
+import { ReviewRangeHandles } from "./review-range";
+import type { ReviewBounds } from "./review-range-model";
 import { SettingsSelect } from "./settings-select";
 import { panelTokens } from "./theme";
 import { useChanges } from "./use-changes";
-import { useCommit, useHistory } from "./use-history";
-import type { usePanelSettings } from "./use-panel-settings";
-import { HistoryResizer, ScrollbarStyle } from "./web-chrome";
+import { useHistory } from "./use-history";
+import type { ReviewSelection } from "./use-review";
 
 const NO_REFS: GitRef[] = [];
+type Range = { anchor: string; focus: string; working: boolean };
 
 export function HistoryPanel({
   directory,
   name,
   theme,
-  compact: hostCompact,
-  preferences,
-  viewSwitcher,
+  reviewSelection,
+  onReview,
+  collapsed = false,
+  onToggleCollapse,
 }: {
   directory: string;
   name: string;
   theme: PluginTheme;
-  compact: boolean;
-  preferences: ReturnType<typeof usePanelSettings>;
-  viewSwitcher: ReactNode;
+  reviewSelection: ReviewSelection | null;
+  collapsed?: boolean;
+  onToggleCollapse?(): void;
+  onReview(selection: ReviewSelection | null, repositoryId: string): void;
 }) {
   const c = panelTokens(theme);
-  const [size, setSize] = useState({ width: 1000, height: 700 });
-  const [bodyHeight, setBodyHeight] = useState(0);
-  const compact = hostCompact || size.width < 720;
+  const [width, setWidth] = useState(600);
   const [repositoryId, setRepositoryId] = useState(".");
-  const [reference, setReference] = useState("all");
+  const [reference, setReference] = useState("head");
+  const [baseRef, setBaseRef] = useState("auto");
+  const [defaultRequest, setDefaultRequest] = useState(0);
+  const defaultScope = useRef<string | null>(null);
+  const automaticRange = useRef(true);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const query = useDeferredValue(filter.trim());
-  const [selection, setSelection] = useState<{ key: string; oid: string } | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState<boolean | null>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [file, setFile] = useState<string | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
-  const [copyStatus, setCopyStatus] = useState<string | null>(null);
-  const scopeKey = JSON.stringify([directory, repositoryId, reference]);
-  const selected = selection?.key === scopeKey ? selection.oid : null;
+  const [range, setRange] = useState<Range | null>(null);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const [listHeight, setListHeight] = useState(0);
+  const [handleDraft, setHandleDraft] = useState<ReviewBounds | null>(null);
+  const [dragRange, setDragRange] = useState<Range | null>(null);
+  const dragging = useRef<Range | null>(null);
+  const shifted = useRef(false);
+  const list = useRef<FlatList<GraphRow>>(null);
   const repositories = useChanges(directory, "head", false);
-  const history = useHistory(directory, repositoryId, reference);
-  const detail = useCommit(directory, repositoryId, selected);
-  const refsByRepository = useRef(new Map<string, GitRef[]>());
-  const refs = history.data?.refs ?? refsByRepository.current.get(repositoryId) ?? NO_REFS;
-  useEffect(() => {
-    if (history.data) refsByRepository.current.set(repositoryId, history.data.refs);
-  }, [history.data, repositoryId]);
+  const history = useHistory(directory, repositoryId, reference, reference === "head", baseRef);
   const graph = useMemo(
     () => buildCommitGraph(history.data?.commits ?? []),
     [history.data?.commits],
   );
-  const refsByOid = useMemo(() => {
-    const lookup = new Map<string, GitRef[]>();
-    for (const ref of refs) lookup.set(ref.oid, [...(lookup.get(ref.oid) ?? []), ref]);
-    for (const items of lookup.values())
-      items.sort(
-        (a, b) =>
-          Number(b.current) - Number(a.current) ||
-          a.kind.localeCompare(b.kind) ||
-          a.name.localeCompare(b.name),
-      );
-    return lookup;
-  }, [refs]);
-  const matching = useMemo(
-    () => graph.rows.flatMap((row, index) => (matchesCommit(row.commit, query) ? [index] : [])),
-    [graph.rows, query],
-  );
-  const listRef = useRef<FlatList<GraphRow>>(null);
-  const inputRef = useRef<TextInput>(null);
-  const selectedIndex = graph.rows.findIndex((row) => row.commit.oid === selected);
-  const matchIndex = matching.indexOf(selectedIndex);
-  const graphWidth = Math.max(68, graph.width * 16 + 26);
-  const tableWidth = Math.max(size.width, graphWidth + 260);
-  const showAuthor = size.width >= 1000;
-  const showDate = size.width >= 820;
-  const showDetails = Boolean(selected && (detailsOpen ?? !compact));
-  const showGraph = !(showDetails && (expanded || compact));
-  const minDetailsHeight = Math.min(160, bodyHeight / 2);
-  const maxDetailsHeight = bodyHeight - Math.min(128, bodyHeight / 2);
-  const detailsHeight = Math.max(
-    minDetailsHeight,
-    Math.min(maxDetailsHeight, bodyHeight * preferences.values.historyDetailsRatio),
-  );
-  const selectedCommit = graph.rows[selectedIndex]?.commit;
-  const scrollTo = useCallback((index: number) => {
-    if (index >= 0) listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.4 });
-  }, []);
-  const selectCommit = useCallback(
-    (oid: string) => {
-      setSelection({ key: scopeKey, oid });
-      setFile(null);
-      setDetailsOpen(true);
-    },
-    [scopeKey],
-  );
-  useEffect(() => {
-    const first = history.data?.commits[0];
-    if (!selected && first) {
-      setSelection({ key: scopeKey, oid: first.oid });
-      setFile(null);
-    }
-  }, [history.data, selected, scopeKey]);
-  useEffect(() => {
-    if (!query || !matching.length) return;
-    const index = matching[0];
-    setSelection({ key: scopeKey, oid: graph.rows[index].commit.oid });
-    setFile(null);
-    scrollTo(index);
-  }, [query, matching, graph.rows, scopeKey, scrollTo]);
-  function moveMatch(delta: number) {
-    if (!matching.length) return;
-    const next =
-      matchIndex < 0
-        ? delta > 0
-          ? 0
-          : matching.length - 1
-        : (matchIndex + delta + matching.length) % matching.length;
-    const index = matching[next];
-    setSelection({ key: scopeKey, oid: graph.rows[index].commit.oid });
-    setFile(null);
-    scrollTo(index);
+  const commits = history.data?.commits ?? [];
+  const fork = history.data?.fork;
+  const scopeKey = JSON.stringify([
+    directory,
+    repositoryId,
+    reference,
+    baseRef,
+    history.data?.branch,
+    defaultRequest,
+  ]);
+  const branchLast =
+    reference === "head" && fork?.commitCount != null ? fork.commitCount : commits.length;
+  function commitIndex(oid: string) {
+    const index = commits.findIndex((commit) => commit.oid === oid);
+    return index < 0 && oid === fork?.oldestOid && fork.commitCount ? fork.commitCount - 1 : index;
   }
-  function changeRepository(value: string) {
-    setRepositoryId(value);
-    setReference("all");
-    setDetailsOpen(null);
-    setExpanded(false);
-    setFile(null);
-    setCopyStatus(null);
+  function commitOid(index: number) {
+    return commits[index]?.oid ?? (index === branchLast - 1 ? fork?.oldestOid : null);
+  }
+  const selectableLast =
+    reference !== "head" || fork?.message === "当前为基准分支"
+      ? commits.length
+      : fork?.commitCount != null
+        ? Math.min(commits.length, fork.commitCount)
+        : 0;
+  useEffect(() => {
+    if (reference !== "head" || !history.data || !range) return;
+    if (
+      [range.anchor, range.focus].some((oid) => {
+        let index = history.data?.commits.findIndex((commit) => commit.oid === oid) ?? -1;
+        if (index < 0 && oid === history.data?.fork?.oldestOid && history.data.fork.commitCount)
+          index = history.data.fork.commitCount - 1;
+        return index < 0 || index >= branchLast;
+      })
+    ) {
+      setRange(null);
+      onReview(null, repositoryId);
+    }
+  }, [reference, history.data, range, branchLast, onReview, repositoryId]);
+  useEffect(() => {
+    if (reference !== "head" || !history.data?.fork) return;
+    if (defaultScope.current !== scopeKey) {
+      defaultScope.current = scopeKey;
+      automaticRange.current = true;
+    }
+    if (!automaticRange.current) return;
+    const next = defaultBranchReview(history.data, repositoryId);
+    const selected =
+      next?.selection.mode === "range"
+        ? { anchor: next.selection.newest, focus: next.selection.oldest, working: true }
+        : null;
+    setRange((previous) =>
+      JSON.stringify(previous) === JSON.stringify(selected) ? previous : selected,
+    );
+    if (JSON.stringify(next) !== JSON.stringify(reviewSelection)) onReview(next, repositoryId);
+  }, [reference, history.data, scopeKey, repositoryId, reviewSelection, onReview]);
+  useEffect(() => {
+    if (
+      reference === "head" &&
+      automaticRange.current &&
+      history.data?.hasMore &&
+      history.data.fork?.commitCount != null &&
+      history.data.fork.commitCount <= 10000 &&
+      history.data.commits.length <= history.data.fork.commitCount
+    )
+      void history.loadMore();
+  }, [reference, history.data, history.loadMore]);
+  const graphWidth = Math.max(52, graph.width * 16 + 26);
+  function rangeForBounds(bounds: ReviewBounds): Range | null {
+    if (bounds.bottom === 0 || bounds.bottom > branchLast) return null;
+    const first = commitOid(Math.max(0, bounds.top - 1));
+    const last = commitOid(bounds.bottom - 1);
+    if (!first || !last) return null;
+    return { anchor: first, focus: last, working: bounds.top === 0 };
+  }
+  const activeRange = handleDraft ? rangeForBounds(handleDraft) : (dragRange ?? range);
+  const indices = activeRange ? [activeRange.anchor, activeRange.focus].map(commitIndex) : [];
+  const low = Math.min(...indices);
+  const high = Math.max(...indices);
+  const refsByOid = useMemo(() => {
+    const map = new Map<string, GitRef[]>();
+    for (const ref of history.data?.refs ?? [])
+      map.set(ref.oid, [...(map.get(ref.oid) ?? []), ref]);
+    return map;
+  }, [history.data?.refs]);
+  const repo = repositories.data?.repositories.find((item) => item.id === repositoryId);
+  const workingSelected = handleDraft
+    ? handleDraft.top === 0
+    : !reviewSelection || Boolean(activeRange?.working);
+  const reviewBounds =
+    handleDraft ??
+    (!reviewSelection
+      ? { top: 0, bottom: 0 }
+      : low >= 0
+        ? { top: activeRange?.working ? 0 : low + 1, bottom: high + 1 }
+        : null);
+  function apply(next: Range) {
+    const a = commitIndex(next.anchor);
+    const b = commitIndex(next.focus);
+    if (a < 0 || b < 0 || a >= branchLast || b >= branchLast) return;
+    automaticRange.current = false;
+    defaultScope.current = scopeKey;
+    setRange(next);
+    onReview(
+      {
+        repositoryId,
+        selection: {
+          mode: "range",
+          oldest: commitOid(Math.max(a, b)) ?? next.focus,
+          newest: next.working
+            ? (history.data?.head ?? commits[0].oid)
+            : (commitOid(Math.min(a, b)) ?? next.anchor),
+          workingTree: next.working,
+        },
+      },
+      repositoryId,
+    );
+  }
+  function select(oid: string, extend = false) {
+    const next = {
+      anchor: extend && range ? range.anchor : oid,
+      focus: oid,
+      working: extend && range ? range.working : false,
+    };
+    apply(next);
+  }
+  function selectWorking() {
+    automaticRange.current = false;
+    defaultScope.current = scopeKey;
+    setRange(null);
+    onReview(null, repositoryId);
+  }
+  function scope(value: string) {
+    if (value === "head" && reference === "head") setDefaultRequest((value) => value + 1);
+    defaultScope.current = null;
+    automaticRange.current = true;
+    setReference(value);
+    setHandleDraft(null);
+    dragging.current = null;
+    setDragRange(null);
+    // Endpoints are object IDs, so changing scope does not change the review.
   }
   function refresh() {
-    repositories.refresh();
     history.refresh();
+    repositories.refresh();
   }
-  function onKeyDown(event: {
+  function keyDown(event: {
     key: string;
+    shiftKey?: boolean;
     metaKey?: boolean;
     ctrlKey?: boolean;
-    shiftKey?: boolean;
+    stopPropagation(): void;
     target?: { tagName?: string; closest?(selector: string): unknown };
     preventDefault(): void;
-    stopPropagation(): void;
   }) {
-    if (event.target?.closest?.('[role="menu"]')) return;
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f" && !collapsed) {
       event.preventDefault();
       event.stopPropagation();
-      inputRef.current?.focus();
+      setSearchOpen(true);
       return;
     }
     if (event.key === "Escape") {
-      if (file) setFile(null);
-      else if (filter) setFilter("");
-      else if (showDetails) {
-        setDetailsOpen(false);
-        setExpanded(false);
-      }
+      if (!searchOpen && !optionsOpen) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setSearchOpen(false);
+      setOptionsOpen(false);
+      setFilter("");
       return;
     }
-    if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target?.tagName ?? "")) return;
-    if (!event.target?.closest?.('[data-testid="git-commit-list"]')) return;
-    if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key) && graph.rows.length) {
-      event.preventDefault();
-      const index =
-        event.key === "Home"
-          ? 0
-          : event.key === "End"
-            ? graph.rows.length - 1
-            : Math.max(
-                0,
-                Math.min(
-                  graph.rows.length - 1,
-                  selectedIndex + (event.key === "ArrowDown" ? 1 : -1),
-                ),
-              );
-      setSelection({ key: scopeKey, oid: graph.rows[index].commit.oid });
-      setFile(null);
-      scrollTo(index);
-    } else if (event.key === "Enter" && selected) {
-      event.preventDefault();
-      setDetailsOpen(true);
-    }
+    if (event.target?.closest?.('[role="slider"]')) return;
+    if (["INPUT", "SELECT", "TEXTAREA"].includes(event.target?.tagName ?? "")) return;
+    if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key) || !selectableLast) return;
+    event.preventDefault();
+    const current = commits.findIndex((commit) => commit.oid === range?.focus);
+    const index =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? selectableLast - 1
+          : Math.max(
+              0,
+              Math.min(selectableLast - 1, current + (event.key === "ArrowDown" ? 1 : -1)),
+            );
+    select(commits[index].oid, Boolean(event.shiftKey));
+    list.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
   }
-  const renderRow = useCallback(
-    ({ item }: { item: GraphRow }) => (
-      <CommitGraphRow
-        row={item}
-        graphWidth={graphWidth}
-        theme={theme}
-        references={refsByOid.get(item.commit.oid) ?? NO_REFS}
-        head={history.data?.head === item.commit.oid}
-        active={selected === item.commit.oid}
-        matched={matchesCommit(item.commit, query)}
-        showAuthor={showAuthor}
-        showDate={showDate}
-        onSelect={selectCommit}
-      />
-    ),
-    [
-      graphWidth,
-      theme,
-      refsByOid,
-      history.data?.head,
-      selected,
-      query,
-      showAuthor,
-      showDate,
-      selectCommit,
-    ],
-  );
   return (
     <View
       testID="git-history-panel"
-      style={{ flex: 1, minWidth: 0, minHeight: 0, backgroundColor: c.surface0 }}
-      onLayout={(event) =>
-        setSize({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })
-      }
-      {...(Platform.OS === "web" ? { onKeyDownCapture: onKeyDown } : {})}
+      style={{ flex: 1, minHeight: 0, minWidth: 0, backgroundColor: c.surface0 }}
+      onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
+      {...(Platform.OS === "web" ? { onKeyDownCapture: keyDown } : {})}
     >
-      <ScrollbarStyle theme={theme} thin={preferences.values.scrollbar === "thin"} />
-      {showSettings ? (
-        <SettingsPanel
-          theme={theme}
-          values={preferences.values}
-          update={preferences.update}
-          saving={preferences.saving}
-          error={preferences.error}
-          retry={preferences.retry}
-          reset={preferences.reset}
-          onClose={() => setShowSettings(false)}
-        />
-      ) : null}
       <View
         style={{
-          minHeight: 44,
+          height: 34,
           flexDirection: "row",
-          gap: 7,
           alignItems: "center",
-          paddingHorizontal: 10,
+          gap: 4,
+          paddingHorizontal: 6,
           borderBottomWidth: 1,
-          borderBottomColor: c.border,
-          backgroundColor: c.surface1,
+          borderColor: c.border,
         }}
       >
-        {viewSwitcher}
-        <View style={{ flex: 1, minWidth: 0, maxWidth: 310 }}>
-          <SettingsSelect
-            label="提交图仓库"
-            value={repositoryId}
-            options={
-              (repositories.data?.repositories ?? []).length
-                ? (repositories.data?.repositories ?? []).map((repo) => ({
-                    value: repo.id,
-                    label: `${repo.id === "." ? name : repo.relativePath}${repo.state === "uninitialized" ? " · 未初始化" : repo.state === "error" ? " · 读取失败" : ""}`,
-                  }))
-                : [{ value: ".", label: name }]
-            }
-            onChange={changeRepository}
+        {onToggleCollapse ? (
+          <ToolButton
             theme={theme}
+            icon={collapsed ? "chevronRight" : "chevronDown"}
+            label={collapsed ? "展开提交图" : "收起提交图"}
+            onPress={onToggleCollapse}
           />
-        </View>
-        <View style={{ flex: 1, minWidth: 0, maxWidth: 260 }}>
-          <SettingsSelect
-            label="提交图分支范围"
-            value={reference}
-            options={[
-              { value: "all", label: "所有分支" },
-              { value: "head", label: "当前 HEAD" },
-              ...refs.map((ref) => ({
-                value: ref.fullName,
-                label: `${ref.kind === "tag" ? "标签" : ref.kind === "remote" ? "远端" : "分支"} · ${ref.name}`,
-              })),
-            ]}
-            onChange={(value) => {
-              setReference(value);
-              setFile(null);
-              setDetailsOpen(null);
-              setExpanded(false);
+        ) : (
+          <Icon name="branch" size={15} color={c.accent} />
+        )}
+        <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: c.foreground, fontSize: 12 }}>
+          {reference === "head"
+            ? (history.data?.branch ?? "当前分支")
+            : reference === "all"
+              ? "所有分支"
+              : (history.data?.refs.find((ref) => ref.fullName === reference)?.name ?? reference)}
+        </Text>
+        {!collapsed ? (
+          <ToolButton
+            theme={theme}
+            icon="search"
+            label="搜索提交"
+            active={searchOpen}
+            onPress={() => {
+              setSearchOpen((value) => !value);
+              setFilter("");
             }}
-            theme={theme}
           />
-        </View>
-        <View style={{ flex: compact ? 0 : 1 }} />
-        <ToolButton
-          theme={theme}
-          icon="refresh"
-          label="刷新提交图"
-          busy={history.loading || repositories.refreshing}
-          onPress={refresh}
-        />
+        ) : null}
         <ToolButton
           theme={theme}
           icon="settings"
-          label="Git 设置"
-          onPress={() => setShowSettings(true)}
+          label="提交图选项"
+          active={optionsOpen}
+          onPress={() => setOptionsOpen(true)}
         />
       </View>
-      <View
-        style={{
-          paddingVertical: 6,
-          paddingHorizontal: 12,
-          borderBottomWidth: 1,
-          borderBottomColor: c.border,
-        }}
-      >
-        <InputField
-          theme={theme}
-          icon="search"
-          inputRef={inputRef}
-          accessibilityLabel="搜索已加载提交"
-          placeholder="在已加载提交中查找消息、作者或 SHA"
-          value={filter}
-          onChangeText={setFilter}
-          autoCapitalize="none"
-          autoCorrect={false}
-          onNavigateMatch={moveMatch}
-        >
-          {query ? (
-            <>
-              <Text
-                accessibilityLiveRegion="polite"
-                style={{
-                  color: matching.length ? c.foregroundMuted : c.statusWarning,
-                  fontSize: 10,
-                }}
-              >
-                {matchIndex < 0 ? 0 : matchIndex + 1}/{matching.length}
-              </Text>
-              <ToolButton
-                theme={theme}
-                icon="up"
-                label="上一个匹配提交"
-                disabled={!matching.length}
-                onPress={() => moveMatch(-1)}
-              />
-              <ToolButton
-                theme={theme}
-                icon="down"
-                label="下一个匹配提交"
-                disabled={!matching.length}
-                onPress={() => moveMatch(1)}
-              />
-              <ToolButton
-                theme={theme}
-                icon="close"
-                label="清除提交搜索"
-                onPress={() => setFilter("")}
-              />
-            </>
-          ) : !compact ? (
-            <Text style={{ color: c.foregroundMuted, fontSize: 10, paddingRight: 6 }}>
-              ⌘ / Ctrl + F
-            </Text>
-          ) : null}
-        </InputField>
-      </View>
-      {repositories.error || history.error ? (
-        <View
-          accessibilityRole="alert"
-          style={{
-            flexDirection: "row",
-            paddingHorizontal: 12,
-            paddingVertical: 6,
-            gap: 8,
-            alignItems: "center",
-            backgroundColor: c.surface1,
-            borderBottomWidth: 1,
-            borderBottomColor: c.border,
-          }}
-        >
-          <Icon name="warning" color={c.statusWarning} size={14} />
-          <Text style={{ flex: 1, color: c.statusWarning, fontSize: 11 }}>
-            {history.error ?? repositories.error}
-          </Text>
-          <ToolButton theme={theme} icon="refresh" label="重试刷新提交图" onPress={refresh} />
-        </View>
-      ) : null}
-      <View
-        testID="git-history-body"
-        onLayout={(event) => setBodyHeight(event.nativeEvent.layout.height)}
-        style={{ flex: 1, minHeight: 0 }}
-      >
-        {showGraph ? (
-          <View testID="git-commit-list" style={{ flex: 1, minHeight: 0 }}>
-            {graph.rows.length ? (
-              <ScrollView
-                horizontal
-                style={{ flex: 1, minHeight: 0 }}
-                contentContainerStyle={{ flexGrow: 1 }}
-              >
-                <View style={{ width: tableWidth, flex: 1, minHeight: 0 }}>
-                  <View
-                    style={{
-                      height: 28,
-                      paddingRight: 12,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      borderBottomWidth: 1,
-                      borderBottomColor: c.border,
-                      backgroundColor: c.surface1,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        width: graphWidth,
-                        paddingLeft: 15,
-                        color: c.foregroundMuted,
-                        fontSize: 10,
-                      }}
-                    >
-                      提交图
-                    </Text>
-                    <Text style={{ flex: 1, color: c.foregroundMuted, fontSize: 10 }}>
-                      提交信息
-                    </Text>
-                    {showAuthor ? (
-                      <Text style={{ width: 130, color: c.foregroundMuted, fontSize: 10 }}>
-                        作者
-                      </Text>
-                    ) : null}
-                    {showDate ? (
-                      <Text style={{ width: 100, color: c.foregroundMuted, fontSize: 10 }}>
-                        日期
-                      </Text>
-                    ) : null}
-                    <Text style={{ width: 68, color: c.foregroundMuted, fontSize: 10 }}>提交</Text>
-                  </View>
-                  <FlatList
-                    ref={listRef}
-                    data={graph.rows}
-                    keyExtractor={(row) => row.commit.oid}
-                    renderItem={renderRow}
-                    extraData={selected}
-                    style={{ flex: 1, minHeight: 0 }}
-                    initialNumToRender={24}
-                    windowSize={7}
-                    getItemLayout={(_, index) => ({
-                      index,
-                      length: COMMIT_ROW_HEIGHT,
-                      offset: index * COMMIT_ROW_HEIGHT,
-                    })}
-                    onScrollToIndexFailed={({ index }) =>
-                      listRef.current?.scrollToOffset({
-                        offset: index * COMMIT_ROW_HEIGHT,
-                        animated: false,
-                      })
-                    }
-                    ListFooterComponent={
-                      history.data?.hasMore ? (
-                        <View
-                          style={{
-                            alignItems: "center",
-                            padding: 8,
-                            borderTopWidth: 1,
-                            borderTopColor: c.border,
-                          }}
-                        >
-                          <ToolButton
-                            theme={theme}
-                            icon="down"
-                            label="加载更多提交"
-                            text="加载更多提交"
-                            busy={history.loadingMore}
-                            onPress={() => {
-                              void history.loadMore();
-                            }}
-                          />
-                        </View>
-                      ) : (
-                        <View style={{ padding: 10, alignItems: "center" }}>
-                          <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>
-                            已显示全部本地历史
-                          </Text>
-                        </View>
-                      )
-                    }
-                  />
-                </View>
-              </ScrollView>
-            ) : history.loading ? (
-              <HistoryNotice theme={theme} busy title="正在读取提交历史…" />
-            ) : history.error ? (
-              <HistoryNotice
-                theme={theme}
-                title="无法读取提交历史"
-                description={history.error}
-                retry={refresh}
-              />
-            ) : (
-              <HistoryNotice
-                theme={theme}
-                title="此仓库还没有提交"
-                description="首次提交后，分支与提交历史会显示在这里。"
-              />
-            )}
-          </View>
-        ) : null}
-        {showDetails && selected ? (
-          <View
-            testID="git-commit-details"
-            style={{
-              ...(compact || expanded
-                ? { flex: 1 }
-                : {
-                    height: bodyHeight
-                      ? detailsHeight
-                      : `${preferences.values.historyDetailsRatio * 100}%`,
-                    flexShrink: 0,
-                  }),
-              minHeight: 0,
-              borderTopWidth: 1,
-              borderTopColor: c.border,
-              backgroundColor: c.surface0,
-            }}
-          >
-            {!compact && !expanded ? (
-              <HistoryResizer
-                theme={theme}
-                height={detailsHeight}
-                min={minDetailsHeight}
-                max={maxDetailsHeight}
-                onChange={(height) => {
-                  if (bodyHeight > 0)
-                    preferences.update({ historyDetailsRatio: height / bodyHeight });
-                }}
-                onCommit={preferences.flush}
-                onReset={() => {
-                  preferences.update({ historyDetailsRatio: defaultSettings.historyDetailsRatio });
-                  preferences.flush();
-                }}
-              />
-            ) : null}
+      {optionsOpen ? (
+        <Modal transparent animationType="none" onRequestClose={() => setOptionsOpen(false)}>
+          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+            <Pressable
+              accessibilityLabel="关闭提交图选项"
+              onPress={() => setOptionsOpen(false)}
+              style={{ position: "absolute", inset: 0, backgroundColor: "#00000033" }}
+            />
             <View
+              accessibilityLabel="提交图选项"
               style={{
-                minHeight: 34,
-                paddingHorizontal: 8,
-                gap: 7,
-                flexDirection: "row",
-                alignItems: "center",
-                borderBottomWidth: 1,
-                borderBottomColor: c.border,
+                width: 360,
+                maxWidth: "92%",
+                maxHeight: "80%",
+                padding: 12,
+                gap: 10,
+                borderWidth: 1,
+                borderColor: c.border,
+                borderRadius: 6,
                 backgroundColor: c.surface1,
               }}
+              {...(Platform.OS === "web"
+                ? {
+                    onKeyDown: (event: { key: string; stopPropagation(): void }) => {
+                      if (event.key === "Escape") {
+                        event.stopPropagation();
+                        setOptionsOpen(false);
+                      }
+                    },
+                  }
+                : {})}
             >
-              {compact ? (
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Text style={{ flex: 1, color: c.foreground, fontSize: 12 }}>提交图选项</Text>
                 <ToolButton
                   theme={theme}
-                  icon="back"
-                  label="返回提交图"
-                  onPress={() => {
-                    setDetailsOpen(false);
-                    setExpanded(false);
-                    setFile(null);
-                  }}
+                  icon="refresh"
+                  label="刷新提交图"
+                  busy={history.loading}
+                  onPress={refresh}
                 />
-              ) : (
-                <Icon name="source" color={c.foregroundMuted} size={14} />
-              )}
-              <Text style={{ color: c.accent, fontFamily: c.mono, fontSize: 11 }}>
-                {selected.slice(0, 8)}
-              </Text>
-              <Text
-                numberOfLines={1}
-                style={{ flex: 1, minWidth: 0, color: c.foreground, fontSize: 11 }}
-              >
-                {selectedCommit?.subject ?? detail.data?.subject ?? "提交详情"}
-              </Text>
-              <ToolButton
-                theme={theme}
-                icon="copy"
-                label="复制完整提交 SHA"
-                onPress={() => {
-                  void copyText(selected).then(
-                    () => setCopyStatus("已复制提交 SHA"),
-                    (error: unknown) =>
-                      setCopyStatus(
-                        `复制失败：${error instanceof Error ? error.message : String(error)}`,
-                      ),
-                  );
-                }}
-              />
-              {!compact ? (
-                <ToolButton
-                  theme={theme}
-                  icon={expanded ? "down" : "up"}
-                  label={expanded ? "收起提交详情" : "展开提交详情"}
-                  onPress={() => setExpanded((value) => !value)}
-                />
-              ) : null}
-              {!compact ? (
                 <ToolButton
                   theme={theme}
                   icon="close"
-                  label="关闭提交详情"
-                  onPress={() => {
-                    setDetailsOpen(false);
-                    setExpanded(false);
-                  }}
+                  label="关闭选项"
+                  onPress={() => setOptionsOpen(false)}
                 />
-              ) : null}
+              </View>
+              <ScrollView contentContainerStyle={{ gap: 10 }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <SettingsSelect
+                    theme={theme}
+                    label="提交图仓库"
+                    value={repositoryId}
+                    options={(repositories.data?.repositories ?? []).map((item) => ({
+                      value: item.id,
+                      label: item.id === "." ? name : item.relativePath,
+                    }))}
+                    onChange={(id) => {
+                      setRepositoryId(id);
+                      setRange(null);
+                      setDragRange(null);
+                      dragging.current = null;
+                      onReview(null, id);
+                    }}
+                  />
+                </View>
+                <SettingsSelect
+                  theme={theme}
+                  label="提交图分支范围"
+                  value={reference}
+                  options={[
+                    { value: "all", label: "所有分支" },
+                    { value: "head", label: history.data?.branch ?? "HEAD" },
+                    ...(history.data?.refs ?? []).map((ref) => ({
+                      value: ref.fullName,
+                      label: ref.name,
+                    })),
+                  ]}
+                  onChange={scope}
+                />
+                {reference === "head" ? (
+                  <View style={{ paddingHorizontal: 6, paddingBottom: 6, gap: 4 }}>
+                    <SettingsSelect
+                      theme={theme}
+                      label="分叉基准分支"
+                      value={baseRef}
+                      onChange={(value) => {
+                        defaultScope.current = null;
+                        automaticRange.current = true;
+                        setBaseRef(value);
+                      }}
+                      options={[
+                        { value: "auto", label: "基准：自动 · 默认主分支" },
+                        ...(history.data?.refs ?? [])
+                          .filter((ref) => ref.kind !== "tag" && !ref.current)
+                          .map((ref) => ({ value: ref.fullName, label: `基准：${ref.name}` })),
+                      ]}
+                    />
+                    <Text numberOfLines={2} style={{ fontSize: 10, color: c.foregroundMuted }}>
+                      {fork?.oid
+                        ? `分叉点 ${fork.oid.slice(0, 8)} · ${fork.baseRef.replace(/^refs\/(heads|remotes)\//, "")} · ${fork.commitCount} 个分支提交`
+                        : (fork?.message ?? "正在定位分叉点…")}
+                    </Text>
+                  </View>
+                ) : null}
+              </ScrollView>
             </View>
-            {detail.error ? (
-              <HistoryNotice
+          </View>
+        </Modal>
+      ) : null}
+      <View style={{ flex: 1, minHeight: 0, display: collapsed ? "none" : "flex" }}>
+        {searchOpen ? (
+          <View style={{ padding: 6 }}>
+            <InputField
+              theme={theme}
+              icon="search"
+              accessibilityLabel="搜索已加载提交"
+              placeholder="搜索提交、作者、SHA"
+              value={filter}
+              onChangeText={setFilter}
+              autoFocus
+            >
+              <ToolButton
                 theme={theme}
-                title="读取提交详情失败"
-                description={detail.error}
-                retry={detail.retry}
+                icon="close"
+                label="关闭提交搜索"
+                onPress={() => {
+                  setSearchOpen(false);
+                  setFilter("");
+                }}
               />
-            ) : detail.data ? (
-              file ? (
-                <CommitDiff
-                  key={`${selected}:${file}`}
-                  directory={directory}
-                  repositoryId={repositoryId}
-                  commit={detail.data}
-                  path={file}
-                  theme={theme}
-                  width={size.width}
-                  preferences={preferences}
-                  onBack={() => setFile(null)}
-                />
-              ) : (
-                <CommitSummary
-                  commit={detail.data}
-                  theme={theme}
-                  compact={compact}
-                  onOpenFile={setFile}
-                  onSelectParent={(oid) => {
-                    selectCommit(oid);
-                    scrollTo(graph.rows.findIndex((row) => row.commit.oid === oid));
-                  }}
-                />
-              )
-            ) : (
-              <HistoryNotice theme={theme} busy title="正在读取提交详情…" />
-            )}
+            </InputField>
           </View>
         ) : null}
-      </View>
-      <View
-        style={{
-          minHeight: 27,
-          paddingHorizontal: 12,
-          gap: 7,
-          flexDirection: "row",
-          alignItems: "center",
-          backgroundColor: c.surface1,
-          borderTopWidth: 1,
-          borderTopColor: c.border,
-        }}
-      >
-        <Icon name="branch" color={c.foregroundMuted} size={12} />
-        <Text numberOfLines={1} style={{ color: c.foregroundMuted, fontSize: 10, flexShrink: 1 }}>
-          {history.data?.branch ?? history.data?.head?.slice(0, 8) ?? "HEAD"}
-        </Text>
-        <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>
-          · {graph.rows.length} 次提交{history.data?.hasMore ? "（可继续加载）" : ""}
-        </Text>
-        <View style={{ flex: 1 }} />
-        {copyStatus ? (
+        <View
+          style={{
+            height: 28,
+            flexDirection: "row",
+            alignItems: "center",
+            backgroundColor: c.surface1,
+            borderBottomWidth: 1,
+            borderColor: c.border,
+          }}
+        >
           <Text
-            accessibilityLiveRegion="polite"
-            numberOfLines={1}
-            style={{ color: c.foregroundMuted, fontSize: 10, flexShrink: 1 }}
+            style={{ width: graphWidth, paddingLeft: 12, color: c.foregroundMuted, fontSize: 10 }}
           >
-            {copyStatus}
+            GRAPH
           </Text>
-        ) : (
-          <Text style={{ color: c.foregroundMuted, fontSize: 10 }}>
-            {compact ? "只读" : `${refs.filter((ref) => ref.kind !== "tag").length} 个分支 · 只读`}
-          </Text>
-        )}
+          <Text style={{ flex: 1, color: c.foregroundMuted, fontSize: 10 }}>提交消息</Text>
+          {width > 800 ? (
+            <Text style={{ width: 130, color: c.foregroundMuted, fontSize: 10 }}>作者</Text>
+          ) : null}
+          <Text style={{ width: 68, color: c.foregroundMuted, fontSize: 10 }}>提交</Text>
+        </View>
+
+        {history.error ? (
+          <View accessibilityRole="alert" style={{ padding: 10 }}>
+            <Text style={{ color: c.statusDanger }}>{history.error}</Text>
+            <ToolButton theme={theme} text="重试" label="重试提交图" onPress={refresh} />
+          </View>
+        ) : null}
+        <View
+          style={{ flex: 1, minHeight: 0 }}
+          onLayout={(event) => setListHeight(event.nativeEvent.layout.height)}
+        >
+          <ScrollView
+            horizontal
+            style={{ flex: 1, minHeight: 0 }}
+            contentContainerStyle={{ minWidth: width, flex: 1 }}
+          >
+            <FlatList
+              ref={list}
+              testID="git-commit-list"
+              style={{ flex: 1, minHeight: 0 }}
+              data={graph.rows}
+              ListHeaderComponent={
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Review 未提交改动"
+                  accessibilityState={{ selected: workingSelected }}
+                  onPress={selectWorking}
+                  {...(Platform.OS === "web"
+                    ? {
+                        onPointerDown: () => {
+                          const head = history.data?.head;
+                          if (head) {
+                            dragging.current = { anchor: head, focus: head, working: true };
+                          }
+                        },
+                      }
+                    : {})}
+                  style={{
+                    height: COMMIT_ROW_HEIGHT,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    backgroundColor: workingSelected ? c.selection : c.surface0,
+                    borderBottomWidth: 1,
+                    borderColor: c.border,
+                  }}
+                >
+                  <View style={{ width: graphWidth, alignItems: "center" }}>
+                    <Icon name="source" color={c.accent} size={15} />
+                  </View>
+                  <Text
+                    style={{
+                      color: c.foreground,
+                      fontStyle: "italic",
+                      fontWeight: "600",
+                      fontSize: 12,
+                    }}
+                  >
+                    Working Changes
+                  </Text>
+                  <Text style={{ color: c.foregroundMuted, fontSize: 11, paddingLeft: 8 }}>
+                    {repo?.files.length ?? 0} 个文件 · {history.data?.branch ?? "HEAD"}
+                  </Text>
+                </Pressable>
+              }
+              onScroll={(event) => setScrollOffset(event.nativeEvent.contentOffset.y)}
+              scrollEventThrottle={16}
+              onEndReached={() => {
+                if (history.data?.hasMore) void history.loadMore();
+              }}
+              onEndReachedThreshold={0.3}
+              keyExtractor={(row) => row.commit.oid}
+              extraData={[reviewSelection, dragRange, range, query]}
+              getItemLayout={(_, index) => ({
+                index,
+                length: COMMIT_ROW_HEIGHT,
+                offset: (index + 1) * COMMIT_ROW_HEIGHT,
+              })}
+              onScrollToIndexFailed={({ index }) =>
+                list.current?.scrollToOffset({ offset: index * COMMIT_ROW_HEIGHT, animated: false })
+              }
+              renderItem={({ item, index }) => (
+                <View
+                  style={{
+                    opacity: index >= selectableLast && item.commit.oid !== fork?.oid ? 0.4 : 1,
+                  }}
+                  {...(Platform.OS === "web"
+                    ? {
+                        onPointerDown: (event) => {
+                          if (index >= selectableLast) {
+                            dragging.current = null;
+                            return;
+                          }
+                          shifted.current = event.nativeEvent.shiftKey;
+                          dragging.current = {
+                            anchor: shifted.current && range ? range.anchor : item.commit.oid,
+                            focus: item.commit.oid,
+                            working: shifted.current && range ? range.working : false,
+                          };
+                        },
+                        onPointerEnter: (event) => {
+                          if (!dragging.current || !event.nativeEvent.buttons) return;
+                          dragging.current = {
+                            ...dragging.current,
+                            focus:
+                              commits[Math.min(index, selectableLast - 1)]?.oid ??
+                              dragging.current.focus,
+                          };
+                          setDragRange(dragging.current);
+                        },
+                        onPointerUp: () => {
+                          const next = dragging.current;
+                          dragging.current = null;
+                          setDragRange(null);
+                          if (next) apply(next);
+                        },
+                        onPointerCancel: () => {
+                          dragging.current = null;
+                          setDragRange(null);
+                        },
+                      }
+                    : {})}
+                >
+                  <CommitGraphRow
+                    row={item}
+                    disabled={index >= selectableLast}
+                    graphWidth={graphWidth}
+                    theme={theme}
+                    references={refsByOid.get(item.commit.oid) ?? NO_REFS}
+                    head={history.data?.head === item.commit.oid}
+                    active={Boolean(
+                      reviewSelection && activeRange && low >= 0 && index >= low && index <= high,
+                    )}
+                    matched={matchesCommit(item.commit, query)}
+                    showAuthor={width > 800}
+                    showDate={width > 1000}
+                    onSelect={Platform.OS === "web" ? () => {} : (oid) => select(oid)}
+                  />
+                  {reference === "head" && item.commit.oid === fork?.oid ? (
+                    <View
+                      pointerEvents="none"
+                      testID="git-branch-fork"
+                      style={{
+                        position: "absolute",
+                        right: 4,
+                        top: 5,
+                        paddingHorizontal: 6,
+                        paddingVertical: 3,
+                        borderRadius: 3,
+                        backgroundColor: c.surface2,
+                      }}
+                    >
+                      <Text style={{ color: c.accent, fontSize: 10 }}>
+                        分叉起点 · 不计入 Review
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              )}
+              ListEmptyComponent={
+                <Text style={{ color: c.foregroundMuted, padding: 12 }}>
+                  {history.loading ? "正在读取提交…" : "没有提交"}
+                </Text>
+              }
+              ListFooterComponent={
+                history.data?.hasMore ? (
+                  <ToolButton
+                    theme={theme}
+                    icon="down"
+                    text="加载更多提交"
+                    label="加载更多提交"
+                    busy={history.loadingMore}
+                    onPress={() => void history.loadMore()}
+                  />
+                ) : null
+              }
+            />
+          </ScrollView>
+          {reviewBounds && listHeight > 0 ? (
+            <ReviewRangeHandles
+              bounds={reviewBounds}
+              last={selectableLast}
+              offset={scrollOffset}
+              height={listHeight}
+              theme={theme}
+              onScroll={(offset) => {
+                setScrollOffset(offset);
+                list.current?.scrollToOffset({ offset, animated: false });
+              }}
+              onChange={setHandleDraft}
+              onCommit={(bounds) => {
+                const next = rangeForBounds(bounds);
+                setHandleDraft(null);
+                if (next) apply(next);
+                else selectWorking();
+              }}
+            />
+          ) : null}
+        </View>
       </View>
     </View>
   );

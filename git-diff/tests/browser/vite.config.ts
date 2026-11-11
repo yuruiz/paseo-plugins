@@ -16,12 +16,15 @@ import {
   revealFileRpc,
 } from "../../shared/contracts";
 import { commitFileDiffRpc, commitRpc, historyRpc } from "../../shared/history-contracts";
+import { reviewDraftSettings } from "../../shared/review-comments";
 import { defaultSettings, panelSettingsSchema } from "../../shared/settings";
 
 const service = new GitChangesService();
 const directory = process.env.PASEO_DIFF_ACCEPTANCE_DIRECTORY;
 const settingsContracts = settingsRpc("git-panel");
 const settingsPath = resolve(import.meta.dirname, "../../.cache/preview-settings.json");
+const reviewContracts = settingsRpc("review-comments");
+let reviewStored = { revision: "0", values: reviewDraftSettings.schema.parse({}) };
 let stored = { revision: "0", values: defaultSettings };
 try {
   const data = JSON.parse(await readFile(settingsPath, "utf8"));
@@ -72,6 +75,23 @@ export default defineConfig({
               if (body.length > 65536) throw new Error("Request too large");
             }
             const input = JSON.parse(body) as { name: string; input: unknown };
+            if (input.name === reviewContracts.read.name) {
+              response.end(JSON.stringify({ data: { status: "ready", ...reviewStored } }));
+              return;
+            }
+            if (input.name === reviewContracts.write.name) {
+              const args = reviewContracts.write.input.parse(input.input);
+              if (args.revision !== reviewStored.revision) {
+                response.end(JSON.stringify({ data: { status: "conflict" } }));
+                return;
+              }
+              reviewStored = {
+                revision: String(Number(reviewStored.revision) + 1),
+                values: reviewDraftSettings.schema.parse(args.values),
+              };
+              response.end(JSON.stringify({ data: { status: "saved", ...reviewStored } }));
+              return;
+            }
             if (input.name === settingsContracts.read.name) {
               response.end(JSON.stringify({ data: { status: "ready", ...stored } }));
               return;
@@ -89,7 +109,7 @@ export default defineConfig({
                 values: panelSettingsSchema.parse(args.values),
               };
               await mkdir(resolve(settingsPath, ".."), { recursive: true });
-              await writeFile(settingsPath, JSON.stringify(stored));
+              await writeFile(settingsPath, `${JSON.stringify(stored, null, 2)}\n`);
               response.end(JSON.stringify({ data: { status: "saved", ...stored } }));
               return;
             }

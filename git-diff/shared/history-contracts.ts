@@ -26,16 +26,26 @@ const repositoryInput = z.object({
   directory: z.string().min(1),
   repositoryId: z.string().default("."),
 });
+export const branchForkSchema = z.object({
+  baseRef: z.string(),
+  oldestOid: oidSchema.nullable().optional(),
+  oid: oidSchema.nullable(),
+  commitCount: z.number().int().nonnegative().nullable(),
+  message: z.string().nullable(),
+});
+export type BranchFork = z.infer<typeof branchForkSchema>;
 export const historyRpc = defineRpc({
   name: "git.history",
   input: repositoryInput.extend({
     firstParent: z.boolean().default(false),
+    baseRef: z.string().min(1).max(1024).default("auto"),
     ref: z.string().min(1).max(1024).default("all"),
     offset: z.number().int().min(0).max(100000).default(0),
     limit: z.number().int().min(1).max(200).default(100),
     revision: z.string().optional(),
   }),
   output: z.object({
+    fork: branchForkSchema.optional(),
     commits: z.array(gitCommitSchema),
     refs: z.array(gitRefSchema),
     head: oidSchema.nullable(),

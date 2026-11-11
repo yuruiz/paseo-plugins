@@ -1,4 +1,4 @@
-import type { CompareResult } from "../shared/compare-contracts";
+import type { CompareInput, CompareResult } from "../shared/compare-contracts";
 import type { ChangesSnapshot } from "../shared/contracts";
 
 // Adapt pinned revisions to the existing file-tree/tab model without carrying
@@ -29,4 +29,19 @@ export function reviewSnapshot(
 
 export function reviewFileKey(repositoryId: string, revision: string, path: string) {
   return JSON.stringify([repositoryId, revision, path]);
+}
+
+export function defaultBranchReview(
+  history: Pick<import("../shared/history-contracts").GitHistory, "head" | "fork" | "commits">,
+  repositoryId: string,
+): Omit<CompareInput, "directory"> | null {
+  const count = history.fork?.commitCount;
+  if (!history.head || !count || count < 0 || !history.fork?.oid) return null;
+  const oldest = history.fork.oldestOid ?? history.commits[count - 1]?.oid;
+  return oldest
+    ? {
+        repositoryId,
+        selection: { mode: "range", oldest, newest: history.head, workingTree: true },
+      }
+    : null;
 }
