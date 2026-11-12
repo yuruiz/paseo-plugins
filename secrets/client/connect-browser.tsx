@@ -12,6 +12,7 @@ import {
   type ConnectVault,
   type ConnectItemSummary,
 } from "../shared/onepassword.js";
+import { UsageSelector } from "./usage-selector.js";
 import { QuestionButton, useQuestionStyles } from "./question-ui.js";
 
 interface BrowserProps extends PluginHostProps {
@@ -303,11 +304,12 @@ function ItemRow({ item, theme, vaultId, agentId, shareEnabled }: ItemRowProps) 
     () => [compactStyles.item, { borderBottomColor: theme.colors.border }],
     [theme.colors.border],
   );
+  const [usage, setUsage] = useState<"once" | "reusable">("once");
   const share = useRpc(shareConnectItem);
   const sharing = useMutation({
     mutationFn: () => {
       if (!agentId) throw new Error("Select an agent first.");
-      return share({ agentId, vaultId, itemId: item.id });
+      return share({ agentId, vaultId, itemId: item.id, usage });
     },
     retry: false,
     gcTime: 0,
@@ -342,6 +344,14 @@ function ItemRow({ item, theme, vaultId, agentId, shareEnabled }: ItemRowProps) 
           </View>
         ) : null}
       </View>
+      {agentId ? (
+        <UsageSelector
+          theme={theme}
+          usage={usage}
+          onChange={setUsage}
+          disabled={!shareEnabled || sharing.isPending || sharing.isSuccess}
+        />
+      ) : null}
       {sharing.isError ? (
         <Text accessibilityRole="alert" style={styles.error}>
           Could not share. Check Connect access and the agent connection, then retry.

@@ -117,3 +117,19 @@ test.each([
   expect(send).not.toHaveBeenCalled();
   expect(broker.list(input.agentId)).toEqual([]);
 });
+
+test("Connect sharing passes reuse mode and tells the agent it can reuse the grant", async () => {
+  const send = vi.fn(async (_message: string) => undefined);
+  const result = await sendConnectItem(connect, broker, { ...input, usage: "reusable" }, send);
+  expect(result.grant.usage).toBe("reusable");
+  expect(send.mock.calls[0][0]).toContain("repeated use until expiry or revocation");
+  const execution = {
+    id: result.grant.id,
+    agentId: input.agentId,
+    executable: process.execPath,
+    args: ["-e", "process.stdout.write(process.env.PASSWORD)"],
+  };
+  expect((await broker.execute(execution)).stdout).toBe("[REDACTED]");
+  expect((await broker.execute(execution)).stdout).toBe("[REDACTED]");
+  expect(broker.list(input.agentId)).toHaveLength(1);
+});

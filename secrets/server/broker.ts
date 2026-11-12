@@ -3,6 +3,8 @@ import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import {
   bundleSchema,
+  usageSchema,
+  type GrantUsage,
   type Secret,
   type SecretImage,
   type SecretFile,
@@ -28,10 +30,12 @@ interface StoredGrant {
   secrets: Secret[];
   images: SecretImage[];
   files: SecretFile[];
+  usage: GrantUsage;
   expiresAt: number;
   timer: ReturnType<typeof setTimeout>;
 }
 interface SubmitOptions {
+  usage?: GrantUsage;
   agentId: string;
   cwd: string;
   secrets: Secret[];
@@ -96,11 +100,13 @@ export class SecretsBroker {
     if (size + JSON.stringify(parsed.data).length * 2 > 32 * 1024 * 1024)
       throw new SecretsError("capacity");
     if (this.grants.size >= MAX_GRANTS) throw new SecretsError("capacity");
+    const usage = usageSchema.safeParse(options.usage ?? "once");
+    if (!usage.success) throw new SecretsError("invalid");
     const id = randomUUID();
     const expiresAt = this.now() + GRANT_LIFETIME_MS;
     const timer = setTimeout(() => this.remove(id), GRANT_LIFETIME_MS);
     timer.unref();
-    const grant = { ...options, ...parsed.data, id, expiresAt, timer };
+    const grant = { ...options, ...parsed.data, usage: usage.data, id, expiresAt, timer };
     this.grants.set(id, grant);
     return this.describe(grant);
   }
@@ -135,8 +141,8 @@ export class SecretsBroker {
       this.outputs.assertCapacity(this.fileExecutions);
       this.fileExecutions++;
     }
-    // Claim synchronously before spawning or awaiting, including failed executions.
-    this.remove(grant.id);
+    // Claim single-use grants synchronously, including failed executions.
+    if (grant.usage === "once") this.remove(grant.id);
     const controller = new AbortController();
     const cancel = () => controller.abort();
     options.signal?.addEventListener("abort", cancel, { once: true });
@@ -154,9 +160,11 @@ export class SecretsBroker {
       this.executions.delete(controller);
       if (hasPrivateFiles) this.fileExecutions--;
       options.signal?.removeEventListener("abort", cancel);
-      grant.secrets = [];
-      grant.images = [];
-      grant.files = [];
+      if (grant.usage === "once") {
+        grant.secrets = [];
+        grant.images = [];
+        grant.files = [];
+      }
     }
   }
 
@@ -194,6 +202,7 @@ export class SecretsBroker {
   private describe(grant: StoredGrant) {
     return {
       id: grant.id,
+      usage: grant.usage,
       names: [...grant.secrets, ...grant.images, ...grant.files].map((secret) => secret.name),
       imageNames: grant.images.map((image) => image.name),
       fileNames: grant.files.map((file) => file.name),

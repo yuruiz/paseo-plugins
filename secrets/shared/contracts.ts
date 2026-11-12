@@ -42,8 +42,11 @@ export const secretsSchema = z
     const names = secrets.map((secret) => secret.name);
     return new Set(names).size === names.length;
   });
+export const usageSchema = z.enum(["once", "reusable"]);
+export type GrantUsage = z.infer<typeof usageSchema>;
 export const grantSchema = z.object({
   id: z.string(),
+  usage: usageSchema.optional(),
   names: z.array(z.string()),
   imageNames: z.array(z.string()).optional(),
   fileNames: z.array(z.string()).optional(),
@@ -159,7 +162,7 @@ export function grantNotification(grant: Grant) {
   const files = grant.fileNames?.length
     ? ` File fields (${grant.fileNames.join(", ")}) contain temporary paths; all output requires user review.`
     : "";
-  return `${grant.names.join(", ")} is ready for one use. Use run_with_secrets with grantId "${grant.id}".${images}${files}${skipped}`;
+  return `${grant.names.join(", ")} is ready ${grant.usage === "reusable" ? "for repeated use until expiry or revocation" : "for one use"}. Use run_with_secrets with grantId "${grant.id}".${images}${files}${skipped}`;
 }
 export const openSecrets = defineRpc({
   name: "secrets.open",
@@ -169,6 +172,7 @@ export const openSecrets = defineRpc({
 export const submissionPayloadSchema = z
   .object({
     ...bundleFields,
+    usage: usageSchema.default("once"),
     skipped: z.array(nameSchema).max(32).default([]),
   })
   .refine(

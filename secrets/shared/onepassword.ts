@@ -1,6 +1,6 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
-import { grantSchema } from "./contracts.js";
+import { grantSchema, usageSchema } from "./contracts.js";
 import { envelopeSchema, ticketSchema } from "./sealing.js";
 
 export const connectProxySchema = z
@@ -118,6 +118,7 @@ export const shareConnectItem = defineRpc({
     agentId: z.string().min(1),
     vaultId: connectIdSchema,
     itemId: connectIdSchema,
+    usage: usageSchema.default("once"),
   }),
   output: z.object({ shared: z.literal(true), grant: grantSchema }),
 });

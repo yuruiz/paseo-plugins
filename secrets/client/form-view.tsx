@@ -14,6 +14,7 @@ import { canPickImage, pickImage, pickSecretFile } from "./web.js";
 import { pastedSecretFile } from "../shared/files.js";
 import { createSecretForm, isSecretFieldReady, type SecretField, type SecretForm } from "./form.js";
 import { createSealedSender } from "./submission.js";
+import { UsageSelector } from "./usage-selector.js";
 import { QuestionButton, useQuestionStyles } from "./question-ui.js";
 
 interface FormProps extends PluginHostProps {
@@ -34,8 +35,8 @@ export function SecretsForm({ agentId, theme, layout, onSaved, request, onDeclin
   );
   const [form] = useState(() =>
     createSecretForm(
-      async (secrets, images, skipped, files) => {
-        const result = await sender.submit({ secrets, images, skipped, files });
+      async (secrets, images, skipped, files, usage) => {
+        const result = await sender.submit({ secrets, images, skipped, files, usage });
         onSaved(result.grant, result.skipped);
       },
       request?.fields,
@@ -140,7 +141,13 @@ export function SecretsForm({ agentId, theme, layout, onSaved, request, onDeclin
               ) : null}
             </View>
           ) : null}
-          <Text style={styles.muted}>Private input · One use · 10 minutes</Text>
+          <UsageSelector
+            theme={theme}
+            usage={state.usage}
+            onChange={form.setUsage}
+            disabled={pending}
+          />
+          <Text style={styles.muted}>Private input · 10 minutes · Revocable</Text>
           {state.error ? (
             <Text accessibilityRole="alert" style={styles.error}>
               {state.error}

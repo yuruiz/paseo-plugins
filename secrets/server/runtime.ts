@@ -228,7 +228,7 @@ async function handleRequest({
     {
       title: "Run with secrets",
       description:
-        "Execute a command with the user's one-use Paseo secrets grant. Values are injected into the child environment, never returned directly. Runs in the grant's agent working directory. Text-only output is buffered and exact values are masked. For grants containing images or files, ALL output is held for user review; only status and outputId are returned. Private file paths are injected as environment variables and deleted after execution. The grant is consumed even on failure. Maximum execution: 120 seconds, 1 MiB output. Do not print, persist, encode or inspect credentials. Supply executable and argv; explicitly use sh -c for shell syntax. No interactive input or background services.",
+        "Execute a command with the user's Paseo secrets grant. Values are injected into the child environment, never returned directly. Runs in the grant's agent working directory. Text-only output is buffered and exact values are masked. For grants containing images or files, ALL output is held for user review; only status and outputId are returned. Private file paths are injected as environment variables and deleted after execution. One-use grants are consumed even on failure; reusable grants remain available until expiry or revocation. Maximum execution: 120 seconds, 1 MiB output. Do not print, persist, encode or inspect credentials. Supply executable and argv; explicitly use sh -c for shell syntax. No interactive input or background services.",
       inputSchema: executionSchema,
       annotations: {
         readOnlyHint: false,

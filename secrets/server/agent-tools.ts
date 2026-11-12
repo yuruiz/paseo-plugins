@@ -58,7 +58,7 @@ export function privateAgentTools(deps: {
     defineAgentTool({
       name: "run_with_secrets",
       description:
-        "Consume one grant belonging to this agent. Supply executable and argv; text values and private file paths are injected into its child environment. Never print, encode, persist or transmit credentials except as needed for the authorized task. Text-only output is masked; all image/file output is held for review. Runs for at most 120 seconds with 1 MiB output. Failed executions consume the grant too. Never retry execution automatically.",
+        "Use a grant belonging to this agent. Supply executable and argv; text values and private file paths are injected into its child environment. Never print, encode, persist or transmit credentials except as needed for the authorized task. Text-only output is masked; all image/file output is held for review. Runs for at most 120 seconds with 1 MiB output. Failed executions consume one-use grants; reusable grants remain available until expiry or revocation. Never retry execution automatically.",
       input: z.object(executionSchema).strict(),
       execute: (input, context) =>
         answer(async () => {

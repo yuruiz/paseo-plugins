@@ -206,7 +206,7 @@ export class OnePasswordConnect {
     const items = method === "GET" && /^vaults\/[a-zA-Z0-9_-]+\/items(?:\?.*)?$/.test(route);
     if (!vaults && !items && !this.configuration?.plaintextEnabled)
       throw new ConnectError(
-        "Plaintext access is disabled. Share an item as a one-use grant, or enable plaintext access in Secrets settings.",
+        "Plaintext access is disabled. Share an item as a single-use or reusable grant, or enable plaintext access in Secrets settings.",
       );
     const result = await this.request(method, route, body, signal);
     if (!vaults && !items) return result;

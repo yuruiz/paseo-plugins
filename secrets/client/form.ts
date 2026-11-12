@@ -21,6 +21,7 @@ export interface SecretField extends Secret {
 }
 interface FormState {
   fields: SecretField[];
+  usage: "once" | "reusable";
   revision: number;
   activeIndex: number;
   status: "editing" | "saving" | "saved";
@@ -34,6 +35,7 @@ export function createSecretForm(
     images: SecretImage[],
     skipped: string[],
     files: SecretFile[],
+    usage: "once" | "reusable",
   ) => Promise<void>,
   requested?: RequestedField[],
   retry?: { available(): boolean; send(): Promise<void> },
@@ -44,6 +46,7 @@ export function createSecretForm(
     fields: requested
       ? requested.map((field) => ({ ...field, id: nextId++, value: "" }))
       : [{ id: nextId++, name: "", value: "", kind: "text" }],
+    usage: "once",
     revision: 0,
     activeIndex: 0,
     status: "editing",
@@ -57,6 +60,10 @@ export function createSecretForm(
   }
   return {
     getState: () => state,
+    setUsage(usage: "once" | "reusable") {
+      if (closed || state.status !== "editing" || state.retryable) return;
+      publish({ ...state, usage });
+    },
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => {
@@ -198,7 +205,7 @@ export function createSecretForm(
         error: null,
       });
       try {
-        await submit(data.secrets, data.images, skipped, data.files);
+        await submit(data.secrets, data.images, skipped, data.files, state.usage);
         if (!closed) publish({ ...state, status: "saved" });
       } catch {
         if (!closed)

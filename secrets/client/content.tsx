@@ -137,6 +137,7 @@ export function GrantRow({ grant, agentId, theme, refresh }: GrantRowProps) {
   return (
     <View style={styles.card}>
       <Text style={textStyle}>{grant.names.join(", ")}</Text>
+      <Text style={textStyle}>{grant.usage === "reusable" ? "Reusable" : "One use"}</Text>
       <Text style={textStyle}>Expires {new Date(grant.expiresAt).toLocaleTimeString()}</Text>
       <View style={styles.row}>
         <QuestionButton

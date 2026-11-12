@@ -36,7 +36,13 @@ function itemSecrets(item: z.infer<typeof itemSchema>): Secret[] {
 export async function sendConnectItem(
   connect: OnePasswordConnect,
   broker: SecretsBroker,
-  input: { agentId: string; cwd: string; vaultId: string; itemId: string },
+  input: {
+    agentId: string;
+    cwd: string;
+    vaultId: string;
+    itemId: string;
+    usage?: "once" | "reusable";
+  },
   send: (message: string, grant: Grant) => Promise<unknown>,
 ) {
   const vaultId = connectIdSchema.parse(input.vaultId);
@@ -56,6 +62,7 @@ export async function sendConnectItem(
       agentId: input.agentId,
       cwd: input.cwd,
       secrets: itemSecrets(item.data),
+      usage: input.usage,
     });
     await send(grantNotification(grant), grant);
   } catch {

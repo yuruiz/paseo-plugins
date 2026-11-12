@@ -1512,3 +1512,70 @@ test("agent loopback bypass preserves inherited, provider and session exclusions
     { NO_PROXY: "*,127.0.0.1,localhost,::1", no_proxy: "*,127.0.0.1,localhost,::1" },
   );
 });
+
+test("reusable grants retain values across concurrent executions and failures until revoked", async () => {
+  const broker = new SecretsBroker();
+  brokers.push(broker);
+  const grant = broker.submit({
+    agentId: "agent-a",
+    cwd: process.cwd(),
+    usage: "reusable",
+    secrets: [{ name: "TOKEN", value: "reusable-test-secret" }],
+  });
+  expect(grant.usage).toBe("reusable");
+  const execute = () =>
+    broker.execute({
+      id: grant.id,
+      agentId: "agent-a",
+      executable: process.execPath,
+      args: ["-e", "setTimeout(() => console.log(process.env.TOKEN), 30)"],
+    });
+  await expect(
+    broker.execute({
+      id: grant.id,
+      agentId: "agent-b",
+      executable: process.execPath,
+      args: [],
+    }),
+  ).rejects.toThrow();
+  await broker.execute({ id: grant.id, executable: "/missing-secrets-test-command", args: [] });
+  const results = await Promise.all([execute(), execute()]);
+  for (const result of results) expect(result.stdout).toBe("[REDACTED]\n");
+  expect(broker.list("agent-a")).toHaveLength(1);
+  expect(broker.revoke("agent-a", grant.id)).toBe(true);
+  await expect(execute()).rejects.toThrow();
+});
+
+test("reusable grants expire without renewing their lifetime on execution", async () => {
+  let now = 1;
+  const broker = new SecretsBroker({ now: () => now });
+  brokers.push(broker);
+  const grant = broker.submit({
+    agentId: "agent-a",
+    cwd: process.cwd(),
+    usage: "reusable",
+    secrets: [{ name: "TOKEN", value: "expiry-test-secret" }],
+  });
+  await broker.execute({ id: grant.id, executable: process.execPath, args: ["-e", ""] });
+  expect(broker.list("agent-a")[0].expiresAt).toBe(grant.expiresAt);
+  now = grant.expiresAt;
+  await expect(
+    broker.execute({ id: grant.id, executable: process.execPath, args: [] }),
+  ).rejects.toThrow();
+  expect(broker.list("agent-a")).toEqual([]);
+});
+
+test("manual forms default to one use and pass the selected reuse mode", async () => {
+  let usage: string | undefined;
+  const form = createSecretForm(async (_secrets, _images, _skipped, _files, selected) => {
+    usage = selected;
+  });
+  expect(form.getState().usage).toBe("once");
+  form.setUsage("reusable");
+  const field = form.getState().fields[0];
+  form.edit(field.id, "name", "TOKEN");
+  form.edit(field.id, "value", "form-test-secret");
+  await form.save();
+  expect(usage).toBe("reusable");
+  form.close();
+});
