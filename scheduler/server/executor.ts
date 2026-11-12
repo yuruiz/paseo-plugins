@@ -3,13 +3,15 @@ import { z } from "zod";
 import { Temporal } from "@js-temporal/polyfill";
 import type { Job, Run } from "../shared/model";
 import type { Settings } from "../shared/settings";
+import type { AgentConfig } from "../shared/agent-config";
+import { LaunchConfigurations, resolveAgentConfig } from "./agent-config";
 
 export interface Observation {
   agentId: string;
   status: "submitted" | "finished" | "failed";
 }
 export interface Executor {
-  submit(job: Job, runId: string): Promise<string>;
+  submit(job: Job, runId: string, defaults?: AgentConfig | null): Promise<string>;
   find(run: Run): Promise<Observation | null>;
   observe(agentId: string): Promise<Observation>;
   archive(agentId: string): Promise<string>;
@@ -20,6 +22,7 @@ interface RunArgumentsInput {
   runId: string;
   daemonHome: string;
   now?: Date;
+  launchEnvironment?: { key: string; value: string };
 }
 
 export function buildRunArguments({
@@ -27,6 +30,7 @@ export function buildRunArguments({
   runId,
   daemonHome,
   now = new Date(),
+  launchEnvironment,
 }: RunArgumentsInput): string[] {
   const date = Temporal.Instant.from(now.toISOString())
     .toZonedDateTimeISO(job.rule.timezone)
@@ -58,6 +62,7 @@ export function buildRunArguments({
   else args.push("--new-workspace", "local");
   if (job.mode) args.push("--mode", job.mode);
   if (job.thinking) args.push("--thinking", job.thinking);
+  if (launchEnvironment) args.push("--env", `${launchEnvironment.key}=${launchEnvironment.value}`);
   args.push("--", job.prompt);
   return args;
 }
@@ -66,6 +71,7 @@ export class CliExecutor implements Executor {
   constructor(
     private settings: Settings,
     private signal: AbortSignal,
+    private configurations: LaunchConfigurations,
   ) {}
 
   private command(args: string[]): Promise<unknown> {
@@ -101,10 +107,31 @@ export class CliExecutor implements Executor {
     });
   }
 
-  async submit(job: Job, runId: string): Promise<string> {
-    const args = buildRunArguments({ job, runId, daemonHome: this.settings.daemonHome });
-    const output = z.object({ agentId: z.uuid() }).parse(await this.command(args));
-    return output.agentId;
+  async submit(job: Job, runId: string, defaults: AgentConfig | null = null): Promise<string> {
+    const config = await resolveAgentConfig(job, defaults, this.settings.daemonHome);
+    const usesProfile =
+      job.agentConfigSource === "profile" ||
+      (job.agentConfigSource === "default" && defaults?.source === "profile");
+    const release = usesProfile ? this.configurations.register(runId, config) : () => {};
+    try {
+      const args = buildRunArguments({
+        job: {
+          ...job,
+          provider: config.model ? `${config.provider}/${config.model}` : config.provider,
+          mode: config.modeId ?? "",
+          thinking: config.thinkingOptionId ?? "",
+        },
+        runId,
+        daemonHome: this.settings.daemonHome,
+        launchEnvironment: usesProfile
+          ? { key: this.configurations.environmentKey, value: runId }
+          : undefined,
+      });
+      const output = z.object({ agentId: z.uuid() }).parse(await this.command(args));
+      return output.agentId;
+    } finally {
+      release();
+    }
   }
 
   async find(run: Run): Promise<Observation | null> {

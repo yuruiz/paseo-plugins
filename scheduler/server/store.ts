@@ -55,7 +55,7 @@ export class Store {
         );
       } catch (error) {
         if (!isMissing(error)) throw error;
-        state = { version: 1, revision: 0, jobs: [], calendars: [], runs: [] };
+        state = { version: 1, revision: 0, jobs: [], agentDefaults: null, calendars: [], runs: [] };
       }
       for (const records of [state.jobs, state.calendars, state.runs]) {
         if (new Set(records.map((item) => item.id)).size !== records.length)

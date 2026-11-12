@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRpc, type PluginSurfaceProps } from "@getpaseo/plugin/client";
 import { calendarSchema, type Calendar, type Job, type JobInput, type Run } from "../shared/model";
 import {
+  agentDefaultsRpc,
   importRpc,
   previewRpc,
   removeRpc,
@@ -13,6 +14,8 @@ import {
   statusRpc,
 } from "../shared/rpc";
 import { JobForm } from "./form";
+import { AgentDefaultsEditor } from "./agent-config";
+import { agentConfigLabel, type AgentConfig } from "../shared/agent-config";
 import { Setup } from "./setup";
 import { Action, Card, Choices, Copy, Field, Notice, Row, Title, UiProvider } from "./ui";
 
@@ -22,6 +25,7 @@ interface Editor {
   revision: number;
 }
 type Mutation =
+  | { kind: "defaults"; config: AgentConfig; applyToAll: boolean; revision: number }
   | { kind: "save"; id: string | null; job: JobInput; revision: number }
   | { kind: "remove"; id: string; revision: number }
   | { kind: "run"; id: string }
@@ -33,6 +37,8 @@ export function inputFromJob(job: Job): JobInput {
     name: job.name,
     prompt: job.prompt,
     provider: job.provider,
+    agentConfigSource: job.agentConfigSource,
+    profileId: job.profileId,
     cwd: job.cwd,
     mode: job.mode,
     thinking: job.thinking,
@@ -70,6 +76,8 @@ function Main({ theme, layout, navigation }: PluginSurfaceProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const status = useRpc(statusRpc);
+  const saveDefaults = useRpc(agentDefaultsRpc);
+  const [defaultsSaveCount, setDefaultsSaveCount] = useState(0);
   const save = useRpc(saveRpc);
   const remove = useRpc(removeRpc);
   const run = useRpc(runRpc);
@@ -83,6 +91,12 @@ function Main({ theme, layout, navigation }: PluginSurfaceProps) {
   const mutation = useMutation({
     mutationFn: async (action: Mutation) => {
       switch (action.kind) {
+        case "defaults":
+          return saveDefaults({
+            config: action.config,
+            applyToAll: action.applyToAll,
+            revision: action.revision,
+          });
         case "save":
           return save({ id: action.id, job: action.job, revision: action.revision });
         case "remove":
@@ -103,6 +117,7 @@ function Main({ theme, layout, navigation }: PluginSurfaceProps) {
           : "Saved.",
       );
       await queryClient.invalidateQueries({ queryKey: ["scheduler"] });
+      if (action.kind === "defaults") setDefaultsSaveCount((count) => count + 1);
     },
     onError: () => {
       void state.refetch();
@@ -187,13 +202,28 @@ function Main({ theme, layout, navigation }: PluginSurfaceProps) {
       {stored && !state.data?.executing ? (
         <Notice message="Background execution is paused. Schedules and history are retained; enabling it applies each schedule’s missed-run policy." />
       ) : null}
-      {tab === "settings" ? <Setup /> : null}
+      {tab === "settings" ? (
+        <View style={{ gap: 12 }}>
+          {stored ? (
+            <AgentDefaultsEditor
+              key={defaultsSaveCount}
+              state={stored}
+              saving={mutation.isPending}
+              onSave={(config, applyToAll, revision) =>
+                mutate({ kind: "defaults", config, applyToAll, revision })
+              }
+            />
+          ) : null}
+          <Setup />
+        </View>
+      ) : null}
       {tab === "jobs" ? (
         <View style={{ gap: 8 }}>
           {editor ? (
             <JobForm
               key={editor.id ?? "new"}
               initial={editor.initial}
+              agentDefaults={stored?.agentDefaults ?? null}
               calendars={calendars}
               saving={mutation.isPending}
               error={mutation.error?.message ?? null}
@@ -323,7 +353,7 @@ function JobCard({
           <Row>
             <Title>{job.name}</Title>
             <Copy muted>
-              {job.enabled ? "Enabled" : "Paused"} · {job.provider}
+              {job.enabled ? "Enabled" : "Paused"} · {agentConfigLabel(job)}
             </Copy>
           </Row>
           <Copy muted>
@@ -353,10 +383,14 @@ function JobCard({
       {details ? (
         <View style={{ gap: 3 }}>
           <Copy muted>{job.cwd}</Copy>
-          <Copy muted>
-            Mode: {job.mode || "Not set — edit and save to pin the provider default"} · Thinking:{" "}
-            {job.thinking || "Default"}
-          </Copy>
+          {job.agentConfigSource === "custom" ? (
+            <Copy muted>
+              Mode: {job.mode || "Not set — edit and save to pin the provider default"} · Thinking:{" "}
+              {job.thinking || "Default"}
+            </Copy>
+          ) : (
+            <Copy muted>{agentConfigLabel(job)} · Resolved for each run</Copy>
+          )}
           <Copy muted>Workspace: {job.workspaceId || "New local workspace"}</Copy>
         </View>
       ) : null}

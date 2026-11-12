@@ -2,6 +2,18 @@ import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
 import { calendarSchema, jobInputSchema, previewSchema, ruleSchema, stateSchema } from "./model";
 
+import { agentConfigSchema } from "./agent-config";
+
+export const agentDefaultsRpc = defineRpc({
+  name: "scheduler.agent-defaults.save",
+  input: z.object({
+    config: agentConfigSchema,
+    applyToAll: z.boolean().default(false),
+    revision: z.number().int().nonnegative(),
+  }),
+  output: z.object({ updatedJobs: z.number().int().nonnegative() }),
+});
+
 const empty = z.object({});
 export const statusRpc = defineRpc({
   name: "scheduler.status",

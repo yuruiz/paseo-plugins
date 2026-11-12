@@ -4,7 +4,8 @@ import { useMutation } from "@tanstack/react-query";
 import { useRpc } from "@getpaseo/plugin/client";
 import { jobInputSchema, type Calendar, type JobInput, type Rule } from "../shared/model";
 import { previewRpc } from "../shared/rpc";
-import { ProviderFields } from "./provider-fields";
+import { AgentConfigurationFields } from "./agent-config";
+import type { AgentConfig } from "../shared/agent-config";
 import {
   hours,
   minutes,
@@ -24,6 +25,8 @@ interface Draft {
   name: string;
   prompt: string;
   provider: string;
+  agentConfigSource: JobInput["agentConfigSource"];
+  profileId: string;
   cwd: string;
   mode: string;
   thinking: string;
@@ -45,12 +48,14 @@ interface Draft {
   enabled: boolean;
 }
 
-function draftFrom(input: JobInput | null): Draft {
+function draftFrom(input: JobInput | null, defaults: AgentConfig | null): Draft {
   if (!input)
     return {
       name: "",
       prompt: "",
       provider: "codex",
+      agentConfigSource: defaults ? "default" : "custom",
+      profileId: "",
       cwd: "",
       mode: "",
       thinking: "",
@@ -81,6 +86,8 @@ function draftFrom(input: JobInput | null): Draft {
     name: input.name,
     prompt: input.prompt,
     provider: input.provider,
+    agentConfigSource: input.agentConfigSource,
+    profileId: input.profileId,
     cwd: input.cwd,
     mode: input.mode,
     thinking: input.thinking,
@@ -142,6 +149,7 @@ function ruleFrom(draft: Draft): Rule {
 
 export function JobForm({
   initial,
+  agentDefaults,
   calendars,
   saving,
   error,
@@ -150,6 +158,7 @@ export function JobForm({
   onRefreshRevision,
 }: {
   initial: JobInput | null;
+  agentDefaults: AgentConfig | null;
   calendars: Calendar[];
   saving: boolean;
   error: string | null;
@@ -157,7 +166,7 @@ export function JobForm({
   onCancel: () => void;
   onRefreshRevision: () => void;
 }) {
-  const [draft, setDraft] = useState(() => draftFrom(initial));
+  const [draft, setDraft] = useState(() => draftFrom(initial, agentDefaults));
   const [catalogCwd, setCatalogCwd] = useState(() => initial?.cwd ?? "");
   const [customTimeZone, setCustomTimeZone] = useState(false);
   const [validation, setValidation] = useState<string | null>(null);
@@ -175,6 +184,8 @@ export function JobForm({
       name: draft.name,
       prompt: draft.prompt,
       provider: draft.provider,
+      agentConfigSource: draft.agentConfigSource,
+      profileId: draft.profileId,
       cwd: draft.cwd,
       mode: draft.mode,
       thinking: draft.thinking,
@@ -414,10 +425,10 @@ export function JobForm({
         onChange={(cwd) => update({ cwd })}
         onBlur={() => setCatalogCwd(draft.cwd.trim())}
       />
-      <ProviderFields
-        provider={draft.provider}
-        mode={draft.mode}
-        thinking={draft.thinking}
+      <AgentConfigurationFields
+        value={draft}
+        allowDefault
+        defaults={agentDefaults}
         cwd={catalogCwd}
         onChange={update}
       />

@@ -8,15 +8,21 @@ import { buildRunArguments } from "./executor";
 import type { Executor, Observation } from "./executor";
 import { Store } from "./store";
 import { Scheduler } from "./scheduler";
+import { ConfigurationError } from "./agent-config";
+import type { AgentConfig } from "../shared/agent-config";
 
 class RecordingExecutor implements Executor {
   submissions: string[] = [];
   failSubmission = false;
+  configurationError = false;
+  configurations: Array<AgentConfig | null> = [];
   recovered: Observation | null = null;
   archives: string[] = [];
   failArchive = false;
   observedStatus: Observation["status"] = "finished";
-  submit(_job: Job, runId: string): Promise<string> {
+  submit(_job: Job, runId: string, defaults: AgentConfig | null = null): Promise<string> {
+    this.configurations.push(defaults);
+    if (this.configurationError) return Promise.reject(new ConfigurationError("Profile missing"));
     this.submissions.push(runId);
     if (this.failSubmission) return Promise.reject(new Error("connection lost after send"));
     return Promise.resolve(randomUUID());
@@ -38,6 +44,8 @@ const input: JobInput = {
   name: "Month-end report",
   prompt: "Generate a report",
   provider: "codex",
+  agentConfigSource: "custom",
+  profileId: "",
   cwd: "/tmp",
   mode: "",
   thinking: "",
@@ -86,6 +94,97 @@ async function setup() {
 }
 
 describe("durable scheduler", () => {
+  it("atomically applies shared settings to all schedules without changing their cadence or pause state", async () => {
+    const ctx = await setup();
+    await ctx.scheduler.save(
+      { ...input, name: "Paused", enabled: false, agentConfigSource: "profile", profileId: "old" },
+      null,
+      ctx.store.snapshot().revision,
+    );
+    const before = ctx.store.snapshot();
+    const config = { source: "profile" as const, profileId: "shared" };
+    expect(await ctx.scheduler.saveAgentDefaults(config, true, before.revision)).toBe(2);
+    const after = ctx.store.snapshot();
+    expect(after.revision).toBe(before.revision + 1);
+    expect(after.agentDefaults).toEqual(config);
+    expect(after.jobs).toEqual(
+      before.jobs.map((job) => ({
+        ...job,
+        agentConfigSource: "default",
+        revision: job.revision + 1,
+      })),
+    );
+    await expect(
+      ctx.scheduler.saveAgentDefaults(
+        { source: "custom", provider: "claude", mode: "plan", thinking: "" },
+        true,
+        before.revision,
+      ),
+    ).rejects.toThrow("Data changed");
+    expect(ctx.store.snapshot()).toEqual(after);
+    await ctx.scheduler.stop();
+    const reopened = await Store.open(ctx.directory);
+    cleanups.push(() => reopened.close());
+    expect(reopened.snapshot()).toEqual(after);
+  });
+
+  it("only changes inheriting jobs when saving shared settings without apply-to-all", async () => {
+    const ctx = await setup();
+    const custom = ctx.store.snapshot().jobs[0];
+    const first = {
+      source: "custom" as const,
+      provider: "claude/sonnet",
+      mode: "plan",
+      thinking: "",
+    };
+    await ctx.scheduler.saveAgentDefaults(first, false, ctx.store.snapshot().revision);
+    await ctx.scheduler.save(
+      { ...input, agentConfigSource: "default" },
+      null,
+      ctx.store.snapshot().revision,
+    );
+    await ctx.scheduler.saveAgentDefaults(
+      { source: "profile", profileId: "personal" },
+      false,
+      ctx.store.snapshot().revision,
+    );
+    expect(ctx.store.snapshot().jobs[0]).toEqual(custom);
+    ctx.setNow("2026-01-31T01:00:30Z");
+    await ctx.scheduler.tick();
+    expect(ctx.executor.configurations).toEqual([
+      { source: "profile", profileId: "personal" },
+      { source: "profile", profileId: "personal" },
+    ]);
+  });
+
+  it("rejects missing shared configuration and empty profile references", async () => {
+    const ctx = await setup();
+    const revision = ctx.store.snapshot().revision;
+    await expect(
+      ctx.scheduler.save({ ...input, agentConfigSource: "default" }, null, revision),
+    ).rejects.toThrow("shared agent configuration");
+    await expect(
+      ctx.scheduler.save({ ...input, agentConfigSource: "profile", profileId: "" }, null, revision),
+    ).rejects.toThrow("Choose a Paseo agent profile");
+    expect(ctx.store.snapshot().revision).toBe(revision);
+  });
+
+  it("records configuration errors as failed without an uncertain submission lock", async () => {
+    const ctx = await setup();
+    ctx.executor.configurationError = true;
+    ctx.setNow("2026-01-31T01:00:30Z");
+    await ctx.scheduler.tick();
+    expect(ctx.store.snapshot().runs[0]).toMatchObject({
+      status: "failed",
+      message: "Profile missing",
+      agentId: null,
+    });
+    ctx.executor.configurationError = false;
+    await ctx.scheduler.runNow(ctx.store.snapshot().jobs[0].id);
+    await ctx.scheduler.tick();
+    expect(ctx.executor.submissions).toHaveLength(1);
+  });
+
   it("archives an opted-in run only after the agent finishes", async () => {
     const ctx = await setup();
     const job = ctx.store.snapshot().jobs[0];

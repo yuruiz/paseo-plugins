@@ -2,6 +2,17 @@
 
 Initial validation: macOS, 2026-09-29, Paseo 0.9.2. Rechecked the archive/history/mobile form update on 2026-10-22 with Paseo daemon and CLI 0.12.0 and plugin SDK 0.9.2: typecheck, lint, the 16 scheduler tests, and the isolated archive smoke test passed.
 
+## Shared agent configuration and profiles (2026-11-04)
+
+Verified on Paseo daemon/CLI 0.15.0 with the pinned plugin SDK 0.9.2:
+
+- Typecheck, lint, formatting, and all 49 unit tests passed. New cases cover legacy data defaults, atomic apply-to-all, individual overrides, stale revisions, preserved scheduling cursors and pause states, persistence, profile edits/removal, and per-instance one-use launch hooks.
+- An isolated daemon on the SSD loaded both scheduler and the local Echo provider. The shared-config RPC switched existing schedules to inheritance and preserved their timing and pause state.
+- A real `paseo run` launched the Echo provider with the selected profile's model, mode, and feature values. The temporary launch marker was removed from the provider environment.
+- Editing a profile through Paseo's native config SDK changed the next launch's feature values; the provider reported the enabled feature. Renaming preserved the ID reference. Deleting the profile produced a failed run with no agent submission.
+- Plugin reloads preserved shared settings, references, and run history. No commercial model was called by these smoke tests.
+- Client source uses the existing themed React Native controls and wrapping rows. Interactive UI verification could not start: Computer Use rejected the workspace's symlinked writable root. Wide/compact and theme checks therefore remain visual QA gaps.
+
 ## Passed
 
 - `npm run typecheck`.

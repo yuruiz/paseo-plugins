@@ -3,6 +3,7 @@ import { realpath } from "node:fs/promises";
 import type { PluginServerContext, PluginSettingsState } from "@getpaseo/plugin/server";
 import { schedulerSettings, settingsSchema, type Settings } from "../shared/settings";
 import {
+  agentDefaultsRpc,
   importRpc,
   previewRpc,
   removeRpc,
@@ -16,8 +17,13 @@ import { preview } from "./engine";
 import { CliExecutor } from "./executor";
 import { Scheduler } from "./scheduler";
 import { Store } from "./store";
+import { LaunchConfigurations } from "./agent-config";
 
 export function contributeScheduler(server: PluginServerContext): () => Promise<void> {
+  const configurations = new LaunchConfigurations();
+  const removeCreationHook = server.before("agent.create", ({ request }) =>
+    configurations.apply(request),
+  );
   const settings = server.registerSettings(schedulerSettings);
   let scheduler: Scheduler | null = null;
   let controller = new AbortController();
@@ -71,7 +77,7 @@ export function contributeScheduler(server: PluginServerContext): () => Promise<
         configured = values;
         scheduler = new Scheduler(
           store,
-          new CliExecutor(values, controller.signal),
+          new CliExecutor(values, controller.signal, configurations),
           () => !stopped && values.enabled,
         );
         timer = setInterval(tick, 30000);
@@ -111,6 +117,9 @@ export function contributeScheduler(server: PluginServerContext): () => Promise<
     await requireScheduler().save(job, id, revision);
     return {};
   });
+  server.handle(agentDefaultsRpc, async ({ config, applyToAll, revision }) => ({
+    updatedJobs: await requireScheduler().saveAgentDefaults(config, applyToAll, revision),
+  }));
   server.handle(removeRpc, async ({ id, revision }) => {
     await requireScheduler().remove(id, revision);
     return {};
@@ -135,5 +144,6 @@ export function contributeScheduler(server: PluginServerContext): () => Promise<
     controller.abort();
     await changes;
     if (scheduler) await scheduler.stop();
+    removeCreationHook();
   };
 }

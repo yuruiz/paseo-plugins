@@ -12,6 +12,7 @@ A standalone business-calendar scheduler for Paseo. No changes to Paseo core are
 - Skip, move earlier, or move later on non-business days, with an optional restriction to stay within the month.
 - Fixed local times or offsets from market open/close; previews of the next five occurrences and adjustment reasons.
 - Pause/resume, manual runs, run history, missed-run policies, and reconciliation after interrupted submissions.
+- Shared provider/model/mode/thinking configuration, one-click application to all schedules, and live references to Paseo agent profiles.
 - Provider thinking options, reuse of an existing workspace, and optional local dates in agent titles.
 
 Business calendars use their region's dates and time zone: `Asia/Shanghai`, `America/New_York`, or `Asia/Hong_Kong`. Calendar-day schedules can use any supported IANA time zone.
@@ -45,6 +46,20 @@ Open **Advanced Schedules → Settings** from the sidebar:
 New schedules start paused. Preview their run times before enabling them. Both background execution and the individual schedule must be enabled for automatic runs. **Run now** can execute a paused schedule but still requires background execution to be enabled.
 
 Provider, Model, Mode, and Thinking use dropdowns populated from the selected host's provider catalog. The working directory scopes discovery; its options refresh after you leave that field. **Provider default** keeps the host's default model rather than pinning a model ID. Mode is the exception: the form pins the provider's advertised default mode, because the daemon does not apply it when `paseo run` omits `--mode` (Claude falls back to Always Ask). **Custom value…** is available when a provider does not advertise a required value. Existing selections remain visible during loading and discovery failures.
+
+### Shared agent configuration and Paseo profiles
+
+Open **Advanced Schedules → Settings → Shared agent configuration**. Choose **Custom provider and model** to set Provider, Model, Mode, and Thinking once, or **Paseo agent profile** to select a profile from the current host. Manage profiles in **Paseo Settings → Agents → Agent profiles**, then use **Refresh profiles** to refresh the list.
+
+- **Save shared configuration** changes future runs of schedules already following it. New schedules default to it once configured.
+- **Save and apply to all N schedules** saves the configuration and switches every existing schedule, including paused schedules, to follow it. Later shared changes automatically apply to their future runs.
+- Each schedule can select **Use shared configuration**, a specific **Paseo agent profile**, or its own **Custom provider and model**. Existing schedules retain their original custom settings until explicitly switched.
+
+Profiles are referenced by stable ID. Each launch reads the latest saved provider, model, mode, thinking, and feature settings from the configured daemon home's `config.json` (`daemon.agentProfiles`). Renaming a profile preserves the reference; deleting it or making it invalid fails the run with an actionable message before submitting an agent. A profile read failure does not silently fall back to another model. The picker uses the selected host's SDK config API, so the configured daemon home must belong to that same host.
+
+Bulk changes are atomic and reject stale revisions. They preserve prompts, working directories, workspaces, schedule rules, pause states, run history, and missed-run cursors. Already started agents retain their settings. After a revision conflict, keep your draft and use **Use latest revision and keep draft** before saving again.
+
+The plugin RPC `scheduler.agent-defaults.save` accepts `{ config, applyToAll, revision }`, returning `{ updatedJobs }`. `config` is either `{ source: "custom", provider: "provider/model", mode: "mode-id", thinking: "thinking-id" }` or `{ source: "profile", profileId: "saved-profile-id" }`. Obtain `revision` and the current `state.agentDefaults` from `scheduler.status`; `applyToAll` defaults to `false`. Individual `scheduler.save` inputs add `agentConfigSource` (`custom`, `default`, or `profile`) and `profileId`. Existing provider/mode/thinking fields remain available for custom configuration.
 
 Hours, minutes, monthly positions, weekdays, and common time zones are selectable. Weekly schedules use weekday buttons. Market-relative offsets use Before/After plus hour/minute selectors. Business-calendar time zones follow the calendar; calendar-day schedules also allow a custom IANA time zone.
 
@@ -89,7 +104,7 @@ Each schedule chooses a missed-run policy:
 
 A schedule permits only one active or unconfirmed run at a time. Occurrences reached during that run are handled by the same missed-run policy after it finishes. Editing or resuming an individual schedule resets its starting point to the save time. Resuming background execution retains existing cursors. Backlogs beyond the automatic recovery limit require review and a new save to reset the starting point.
 
-The plugin starts a new agent through `paseo run --background --home ... --label paseo-scheduler-run=...`. By default it creates a fresh local workspace. Set **Existing workspace ID** to reuse a workspace, and **Thinking option** to preserve a provider-specific setting such as `max`. The optional dated title uses the schedule's time zone. Runs also carry `external-scheduler=paseo-scheduler`, `external-schedule`, and `external-schedule-date` labels for CLI filtering.
+The plugin starts a new agent through `paseo run --background --home ... --label paseo-scheduler-run=...`. By default it creates a fresh local workspace. Set **Existing workspace ID** to reuse a workspace, and **Thinking option** to preserve a provider-specific setting such as `max`. The optional dated title uses the schedule's time zone. Profile-based launches use a scoped `agent.create` hook to apply the complete profile, including feature settings that the CLI does not expose as flags. Runs also carry `external-scheduler=paseo-scheduler`, `external-schedule`, and `external-schedule-date` labels for CLI filtering.
 
 It persists the occurrence ID before submission. After a timeout or restart, it searches for an agent with that label. Unconfirmed submissions remain blocked and are not automatically resubmitted. After reviewing the corresponding agent, you can unblock the record in **Run history**; this does not cancel a submitted task.
 

@@ -5,6 +5,8 @@ import { calendarsWithImports } from "./calendars";
 import { preview, validateRule } from "./engine";
 import type { Executor } from "./executor";
 import { Store } from "./store";
+import { agentConfigSchema, type AgentConfig } from "../shared/agent-config";
+import { ConfigurationError } from "./agent-config";
 
 export function pending(run: Run): boolean {
   return run.status === "dispatching" || run.status === "uncertain" || run.status === "submitted";
@@ -48,6 +50,10 @@ export class Scheduler {
       throw new Error("The working directory must be an absolute path on the daemon host");
     await this.store.update((state) => {
       requireRevision(state, revision);
+      if (input.agentConfigSource === "default" && !state.agentDefaults)
+        throw new Error("Save a shared agent configuration in Settings first");
+      if (input.agentConfigSource === "profile" && !input.profileId)
+        throw new Error("Choose a Paseo agent profile");
       validateRule(input.rule, calendarsWithImports(state.calendars));
       const now = this.now().toISOString();
       if (id) {
@@ -69,6 +75,27 @@ export class Scheduler {
         });
       }
     });
+  }
+
+  async saveAgentDefaults(
+    config: AgentConfig,
+    applyToAll: boolean,
+    revision: number,
+  ): Promise<number> {
+    const checked = agentConfigSchema.parse(config);
+    let updatedJobs = 0;
+    await this.store.update((state) => {
+      requireRevision(state, revision);
+      state.agentDefaults = checked;
+      for (const job of state.jobs) {
+        if (!applyToAll && job.agentConfigSource !== "default") continue;
+        job.agentConfigSource = "default";
+        job.revision += 1;
+        job.error = null;
+        updatedJobs += 1;
+      }
+    });
+    return updatedJobs;
   }
 
   async remove(id: string, revision: number): Promise<void> {
@@ -165,16 +192,16 @@ export class Scheduler {
   }
 
   private launch(job: Job, run: Run): void {
-    const operation = this.dispatch(job, run);
+    const operation = this.dispatch(job, run, this.store.snapshot().agentDefaults);
     this.launches.add(operation);
     void operation
       .finally(() => this.launches.delete(operation))
       .catch((error) => console.error("Scheduler persistence error", error));
   }
 
-  private async dispatch(job: Job, run: Run): Promise<void> {
+  private async dispatch(job: Job, run: Run, defaults: AgentConfig | null): Promise<void> {
     try {
-      const agentId = await this.executor.submit(job, run.id);
+      const agentId = await this.executor.submit(job, run.id, defaults);
       await this.updateRun(run.id, {
         status: "submitted",
         agentId,
@@ -182,8 +209,11 @@ export class Scheduler {
       });
     } catch (error) {
       await this.updateRun(run.id, {
-        status: "uncertain",
-        message: `Submission outcome unconfirmed: ${error instanceof Error ? error.message : String(error)}`,
+        status: error instanceof ConfigurationError ? "failed" : "uncertain",
+        message:
+          error instanceof ConfigurationError
+            ? error.message
+            : `Submission outcome unconfirmed: ${error instanceof Error ? error.message : String(error)}`,
       });
     }
   }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { agentConfigSchema, agentConfigSourceSchema } from "./agent-config";
 
 export const dateSchema = z.iso.date();
 export const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm format");
@@ -122,6 +123,8 @@ export const jobInputSchema = z
     name: z.string().trim().min(1).max(120),
     prompt: z.string().trim().min(1).max(50000),
     provider: z.string().trim().min(1),
+    agentConfigSource: agentConfigSourceSchema.default("custom"),
+    profileId: z.string().trim().default(""),
     cwd: z.string().trim().min(1),
     mode: z.string().trim(),
     thinking: z.string().trim().default(""),
@@ -178,6 +181,7 @@ export const stateSchema = z
     version: z.literal(1),
     revision: z.number().int().nonnegative(),
     jobs: z.array(jobSchema),
+    agentDefaults: agentConfigSchema.nullable().default(null),
     calendars: z.array(calendarSchema),
     runs: z.array(runSchema),
   })
