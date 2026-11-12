@@ -13,13 +13,14 @@ import {
   revealFileRpc,
 } from "./shared/contracts";
 import { commitFileDiffRpc, commitRpc, historyRpc } from "./shared/history-contracts";
-import { reviewDraftSettings } from "./shared/review-comments";
+import { reviewDraftSettings, searchReviewComments } from "./shared/review-comments";
 import { panelSettings } from "./shared/settings";
 
 export default function contribute(server: PluginServerContext) {
   const service = new GitChangesService();
   server.registerSettings(panelSettings);
   server.registerSettings(reviewDraftSettings);
+  server.handle(searchReviewComments, () => ({ items: [] }));
   server.handle(changesRpc, (input) => service.snapshot(input));
   server.handle(compareRpc, (input) => service.compare(input));
   server.handle(compareFileDiffRpc, (input) => service.compareDiff(input));

@@ -1,4 +1,3 @@
-import type { PaseoAgentSendOptions } from "@getpaseo/client";
 import type { DiffLine, FileDiff } from "../shared/contracts";
 import type { ReviewComment } from "../shared/review-comments";
 export type ReviewScope = Pick<ReviewComment, "session" | "scope" | "cwd" | "mode" | "baseRef">;
@@ -41,22 +40,15 @@ export function commentTarget(
     },
   };
 }
-export function reviewAttachment(
-  scope: ReviewScope,
-  comments: ReviewComment[],
-): NonNullable<PaseoAgentSendOptions["attachments"]>[number] {
+export function reviewComposerItem(comment: ReviewComment) {
+  const { filePath, side, lineNumber, body, context, cwd, baseRef } = comment;
   return {
-    type: "review",
-    mimeType: "application/paseo-review",
-    cwd: scope.cwd,
-    mode: scope.mode,
-    baseRef: scope.baseRef,
-    comments: comments.map(({ filePath, side, lineNumber, body, context }) => ({
-      filePath,
-      side,
-      lineNumber,
-      body,
-      context,
-    })),
+    id: comment.id,
+    identifier: `${filePath}:${lineNumber}`,
+    title: `${filePath.split("/").at(-1)}:${lineNumber}`,
+    subtitle: body,
+    url: `file://${cwd.split("/").map(encodeURIComponent).join("/")}/${filePath.split("/").map(encodeURIComponent).join("/")}#L${lineNumber}`,
+    resourceType: "code-review",
+    text: JSON.stringify({ cwd, baseRef, filePath, side, lineNumber, body, context }, null, 2),
   };
 }

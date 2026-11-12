@@ -11,9 +11,11 @@ Browser checks used the real Git service with an isolated fixture and the curren
 - The graph/file divider follows upward and downward mouse motion, including after viewport height clamping.
 - All-branch lanes, current-branch filtering, first-parent fork markers, disabled shared history, range handles, click/Shift/drag selection, keyboard adjustment, graph collapse/restoration and edge auto-scroll.
 - Upward/downward context expansion from both ends of a gap, correct remaining counts and merging without duplicate lines in unified and split models.
-- Line comments on the old and new sides capture a code snapshot and persist through Paseo settings. Checked save/edit, save conflicts retaining typed text, page reload restoring comments, failed feedback preserving drafts and successful retry clearing sent comments.
+- Browser mouse selection stays on its starting diff side, including reverse drags and dragging across columns. Copy excludes the opposite side, line numbers and change signs. The floating selection action opens and saves a review comment.
+- Gutter comment controls avoid the split resizer hit area. Browser checks click the left, center and right of the plus on both sides and context lines, verify Enter activation and single-line four-digit numbers.
+- Line comments on either side persist with code snapshots. Paseo 0.16 composer integration adds them to every conversation in the same workspace, preserves existing prompts, updates edits without duplicates, synchronizes deletion and attachment removal, and includes newly created conversations. Other workspaces are excluded. The old recipient picker and direct-send workflow have been removed.
 
-Feedback browser tests use an SDK substitute, so they do not message real agents. Unit validation checks the generated payload against Paseo's native `AgentAttachmentSchema`, including old/new side identity, line numbers, hunk header and surrounding lines. A live agent feedback delivery and native iOS/Android client were not exercised.
+Composer browser tests use the public API with a local fixture and never send agent messages. Unit validation checks the generated item against `PluginAttachmentItemSchema`, including old/new side identity, line numbers, hunk header and surrounding lines. Live message submission and native iOS/Android were not exercised.
 
 Git integration coverage includes branch comparisons, inclusive first-parent ranges, merges, pagination, empty and shallow histories, submodules, working/untracked files, cache invalidation, renames, literal paths, binary files, size limits and whitespace handling.
 

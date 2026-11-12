@@ -23,6 +23,7 @@ import {
 } from "./context-model";
 import { InputField, ToolButton } from "./controls";
 import { buildDiffRows } from "./diff-model";
+import { useDiffSelection } from "./diff-selection";
 import { findMatches } from "./find-model";
 import { Icon } from "./icons";
 import { diffSyntaxStates, languageForPath } from "./syntax";
@@ -47,6 +48,7 @@ function ReviewGutter({
   style,
   children,
   accent,
+  width,
 }: {
   line: DiffLine | null;
   side: "old" | "new";
@@ -56,6 +58,7 @@ function ReviewGutter({
   style: StyleProp<TextStyle>;
   children: React.ReactNode;
   accent: string;
+  width: number;
 }) {
   const [hovered, setHovered] = useState(false);
   const number = line && (side === "old" ? line.oldLine : line.newLine);
@@ -72,15 +75,17 @@ function ReviewGutter({
       }}
       onHoverIn={() => setHovered(true)}
       onHoverOut={() => setHovered(false)}
-      style={{ width: 40, flexShrink: 0, position: "relative" }}
+      style={{ width, flexShrink: 0, position: "relative" }}
     >
-      <Text style={style}>{children}</Text>
+      <Text numberOfLines={1} style={[style, { width }]}>
+        {children}
+      </Text>
       {enabled && (hovered || (line && hasComment?.(line, side))) ? (
         <View
           pointerEvents="none"
           style={{
             position: "absolute",
-            left: 0,
+            left: 6,
             top: 1,
             width: 16,
             bottom: 1,
@@ -152,6 +157,12 @@ export function DiffViewer({
   currentDiff.current = diff;
   const contextRequest = useRef(false);
   const full = contextState.source === diff ? contextState.full : null;
+  const lastLine = (full ?? diff).hunks.reduce(
+    (last, hunk) => Math.max(last, hunk.oldStart + hunk.oldLines, hunk.newStart + hunk.newLines),
+    0,
+  );
+  const gutterWidth = Math.max(40, Math.ceil(String(lastLine).length * fontSize * 0.7 + 14));
+  const sideGutterWidth = (lineNumbers || onComment ? gutterWidth : 0) + 18;
   const displayedHunks = full?.hunks ?? diff.hunks;
   async function expandContext(
     gap: number,
@@ -218,6 +229,7 @@ export function DiffViewer({
   const [horizontalOffsets, setHorizontalOffsets] = useState([0, 0]);
   const ratio = Math.max(0.2, Math.min(0.8, splitRatio));
   const rootRef = useRef<View>(null);
+  const selection = useDiffSelection(rootRef, full ?? diff, onComment);
   const closeFind = useCallback(() => {
     setFindOpen(false);
     setQuery("");
@@ -373,7 +385,12 @@ export function DiffViewer({
   }, [displayedHunks, tabSize, query]);
   const effectiveWrap = wrap;
   const contentWidth =
-    effectiveWrap || mode === "split" ? width : Math.max(width, columns * fontSize * 0.65 + 106);
+    effectiveWrap || mode === "split"
+      ? width
+      : Math.max(
+          width,
+          columns * fontSize * 0.65 + (lineNumbers || onComment ? gutterWidth * 2 : 0) + 26,
+        );
   const textWidth = columns * fontSize * 0.65 + 18;
   const navigationTarget = useRef<typeof navigation | null>(null);
   useEffect(() => {
@@ -424,10 +441,7 @@ export function DiffViewer({
     };
   }
   function splitCell(line: DiffLine | null, right: boolean) {
-    const codeWidth = Math.max(
-      textWidth,
-      width * (right ? 1 - ratio : ratio) - (lineNumbers ? 58 : 18),
-    );
+    const codeWidth = Math.max(textWidth, width * (right ? 1 - ratio : ratio) - sideGutterWidth);
     return (
       <View
         style={[
@@ -443,6 +457,7 @@ export function DiffViewer({
             onComment={onComment}
             hasComment={hasComment}
             accent={colors.accent}
+            width={gutterWidth}
             style={[
               styles.gutter,
               { backgroundColor: background(line, true), color: changeColor(line) },
@@ -456,7 +471,15 @@ export function DiffViewer({
         </Text>
         <View style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
           <Text
-            selectable
+            selectable={Boolean(line && line.kind !== "meta")}
+            {...(Platform.OS === "web" && line && line.kind !== "meta"
+              ? {
+                  dataSet: {
+                    diffSide: right ? "new" : "old",
+                    diffLine: String(right ? line.newLine : line.oldLine),
+                  },
+                }
+              : {})}
             numberOfLines={effectiveWrap ? undefined : 1}
             ellipsizeMode="clip"
             style={[
@@ -567,6 +590,7 @@ export function DiffViewer({
             onComment={onComment}
             hasComment={hasComment}
             accent={colors.accent}
+            width={gutterWidth}
             style={[
               styles.gutter,
               { backgroundColor: background(line, true), color: changeColor(line) },
@@ -583,6 +607,7 @@ export function DiffViewer({
             onComment={onComment}
             hasComment={hasComment}
             accent={colors.accent}
+            width={gutterWidth}
             style={[
               styles.gutter,
               { backgroundColor: background(line, true), color: changeColor(line) },
@@ -595,7 +620,15 @@ export function DiffViewer({
           {line.kind === "added" ? "+" : line.kind === "removed" ? "−" : " "}
         </Text>
         <Text
-          selectable
+          selectable={line.kind !== "meta"}
+          {...(Platform.OS === "web" && line.kind !== "meta"
+            ? {
+                dataSet: {
+                  diffSide: line.kind === "removed" ? "old" : "new",
+                  diffLine: String(line.kind === "removed" ? line.oldLine : line.newLine),
+                },
+              }
+            : {})}
           numberOfLines={effectiveWrap ? undefined : 1}
           ellipsizeMode="clip"
           style={[styles.code, line.kind === "meta" && styles.meta]}
@@ -674,6 +707,31 @@ export function DiffViewer({
       style={styles.root}
       onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
     >
+      {selection.selected ? (
+        <View
+          testID="diff-selection-comment"
+          {...(Platform.OS === "web"
+            ? { onPointerDown: (event: { preventDefault(): void }) => event.preventDefault() }
+            : {})}
+          style={{
+            position: "absolute",
+            left: selection.selected.left,
+            top: selection.selected.top,
+            zIndex: 30,
+            backgroundColor: colors.surface1,
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: 4,
+          }}
+        >
+          <ToolButton
+            theme={theme}
+            text="添加评论"
+            label="评论选中代码"
+            onPress={selection.comment}
+          />
+        </View>
+      ) : null}
       {findOpen ? (
         <View
           testID="diff-find-bar"
@@ -774,7 +832,7 @@ export function DiffViewer({
             >
               <View
                 style={{
-                  width: Math.max(width * fraction, textWidth + (lineNumbers ? 58 : 18)),
+                  width: Math.max(width * fraction, textWidth + sideGutterWidth),
                   height: 1,
                 }}
               />

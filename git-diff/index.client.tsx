@@ -1,5 +1,6 @@
 import type { PluginClientContext, PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import { ChangesPanel } from "./client/changes-panel";
+import { reviewCommentSource } from "./shared/review-comments";
 
 function Editor(client: PluginClientContext, props: PluginWorkspacePanelProps) {
   return (
@@ -20,6 +21,7 @@ function Sidebar(client: PluginClientContext, props: PluginWorkspacePanelProps) 
 
 export default function contribute(client: PluginClientContext) {
   const removers = [
+    client.addAttachmentSource(reviewCommentSource),
     client.addWorkspacePanel({
       id: "changes",
       title: "Git Diff",

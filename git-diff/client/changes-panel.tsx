@@ -116,6 +116,7 @@ export function ChangesPanel(
     <ReviewProvider
       session={JSON.stringify([props.host.id, props.workspaceId])}
       workspaceId={props.workspaceId}
+      hostId={props.host.id}
       directory={workspace.directory}
       theme={props.theme}
     >
@@ -1294,7 +1295,19 @@ function WorkspaceEditor({
           >
             <View style={styles.titlebar}>
               {viewSwitcher}
-              <Text style={styles.heading}>{review ? "Review" : "Working Changes"}</Text>
+              <Text
+                ref={(node) =>
+                  setWebTitle(
+                    node,
+                    reviewResult
+                      ? `${reviewResult.title} · 已阅 ${reviewedCount}/${model.entries.length}`
+                      : "Working Changes",
+                  )
+                }
+                style={styles.heading}
+              >
+                {review ? "Review" : "Working Changes"}
+              </Text>
               <Text style={styles.count}>{model.entries.length}</Text>
               <ToolButton
                 theme={theme}
@@ -1397,27 +1410,6 @@ function WorkspaceEditor({
                   active={Boolean(review)}
                   onPress={() => setShowComparisonPicker(true)}
                 />
-              </View>
-            ) : null}
-            {review ? (
-              <View
-                style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                  gap: 4,
-                  borderBottomWidth: 1,
-                  borderColor: colors.border,
-                }}
-              >
-                <Text numberOfLines={2} style={styles.small}>
-                  {reviewResult?.title ??
-                    (review.selection.mode === "branch" ? "分支对比" : "连续提交")}
-                </Text>
-                {reviewResult ? (
-                  <Text style={styles.small}>
-                    {reviewResult.commitCount} 个提交 · 已阅 {reviewedCount}/{model.entries.length}
-                  </Text>
-                ) : null}
               </View>
             ) : null}
             {filterOpen ? (

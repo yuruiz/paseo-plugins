@@ -1,6 +1,6 @@
-import { AgentAttachmentSchema } from "@getpaseo/protocol/messages";
+import { PluginAttachmentItemSchema } from "@getpaseo/plugin";
 import { expect, it } from "vitest";
-import { commentTarget, reviewAttachment } from "../client/review-comments-model";
+import { commentTarget, reviewComposerItem } from "../client/review-comments-model";
 import type { FileDiff } from "../shared/contracts";
 import { reviewCommentSchema } from "../shared/review-comments";
 
@@ -31,7 +31,7 @@ const diff: FileDiff = {
     },
   ],
 };
-it("captures old/new line identity and immutable context in Paseo's native review attachment", () => {
+it("captures old/new line identity and immutable context in a composer attachment", () => {
   const old = reviewCommentSchema.parse({
     ...commentTarget(diff, diff.hunks[0].lines[1], "old", scope),
     body: "Check deletion",
@@ -50,17 +50,24 @@ it("captures old/new line identity and immutable context in Paseo's native revie
     oldLineNumber: null,
     newLineNumber: 2,
   });
-  const attachment = AgentAttachmentSchema.parse(reviewAttachment(scope, [old, added]));
-  expect(attachment).toMatchObject({
-    type: "review",
-    mimeType: "application/paseo-review",
+  const item = PluginAttachmentItemSchema.parse(reviewComposerItem(old));
+  expect(item.id).toBe(old.id);
+  expect(item.identifier).toBe("src/file.ts:2");
+  expect(item.title).toBe("file.ts:2");
+  expect(JSON.parse(item.text)).toMatchObject({
     cwd: "/repo",
     baseRef: "base..head",
-    comments: [
-      { filePath: "src/file.ts", side: "old", lineNumber: 2 },
-      { side: "new", lineNumber: 2 },
-    ],
+    filePath: "src/file.ts",
+    side: "old",
+    lineNumber: 2,
+    body: "Check deletion",
+    context: old.context,
   });
-  expect(JSON.stringify(attachment)).not.toContain("host/workspace");
+  expect(JSON.parse(reviewComposerItem(added).text)).toMatchObject({
+    side: "new",
+    body: "Check replacement",
+    context: added.context,
+  });
+  expect(item.text).not.toContain("host/workspace");
   expect(() => commentTarget(diff, diff.hunks[0].lines[1], "new", scope)).toThrow();
 });

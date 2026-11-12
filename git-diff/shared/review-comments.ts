@@ -1,4 +1,9 @@
-import { defineSettings } from "@getpaseo/plugin";
+import {
+  defineAttachmentSource,
+  defineRpc,
+  defineSettings,
+  PluginAttachmentItemSchema,
+} from "@getpaseo/plugin";
 import { z } from "zod";
 
 const contextLine = z.object({
@@ -30,4 +35,18 @@ export const reviewDraftSettings = defineSettings({
   scope: "host",
   version: 1,
   schema: z.object({ comments: z.array(reviewCommentSchema).max(500).default([]) }),
+});
+
+export const searchReviewComments = defineRpc({
+  name: "review-comments.search",
+  input: z.object({ query: z.string() }),
+  output: z.object({ items: z.array(PluginAttachmentItemSchema) }),
+});
+export const reviewCommentSource = defineAttachmentSource({
+  id: "review-comments",
+  title: "Git Review",
+  icon: "MessageSquare",
+  pickerTitle: "Git Review 评论",
+  searchPlaceholder: "评论会在保存时加入对话",
+  search: searchReviewComments,
 });

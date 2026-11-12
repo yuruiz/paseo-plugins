@@ -91,6 +91,10 @@ export function ScrollbarStyle({ theme, thin }: { theme: PluginTheme; thin: bool
     `
     ${panels} { --git-scroll-thumb: ${thumb}; --git-scroll-hover: ${hover}; }
     ${panels} :is([dir],input):not([data-git-code]):not([data-git-code] *) { font-family: ${c.ui}; }
+    [data-git-code="true"], [data-git-code="true"] * { user-select: none; -webkit-user-select: none; }
+    [data-git-code="true"] [data-diff-line], [data-git-code="true"] [data-diff-line] * { user-select: text; -webkit-user-select: text; }
+    [data-selection-side="old"] [data-diff-side="new"], [data-selection-side="old"] [data-diff-side="new"] *,
+    [data-selection-side="new"] [data-diff-side="old"], [data-selection-side="new"] [data-diff-side="old"] * { user-select: none !important; -webkit-user-select: none !important; }
     ${panels} [data-git-field] input { outline: none; box-shadow: none; }
     ${panels} * { scrollbar-width: ${thin ? "thin" : "auto"}; scrollbar-color: var(--git-scroll-thumb) transparent; }
     ${panels} *::-webkit-scrollbar { width: ${thin ? 7 : 12}px; height: ${thin ? 7 : 12}px; }
