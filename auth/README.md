@@ -4,7 +4,7 @@ Log in to Claude Code and Codex from a Paseo conversation. Authentication errors
 
 ## Requirements and installation
 
-- Paseo **0.14.x** on the daemon and client.
+- Paseo **0.14.0 or later** on the daemon and client.
 - A macOS or Linux daemon with the official `claude` or `codex` CLI on its PATH. Desktop, web, iOS and Android clients are supported.
 - Claude CLI with `auth login` and JSON `auth status`; Codex CLI with `login --device-auth` and `login status`.
 - Codex device code login must be enabled in ChatGPT security settings or allowed by the workspace administrator.
@@ -35,7 +35,7 @@ Environment-managed API keys/tokens, cloud-provider authentication, and custom A
 
 Automatic detection uses failed-turn error codes/messages and error snapshots in the agent directory, not model replies or tool output. Startup failures are picked up while a client is connected. Unrecognized failures can always use `/auth`. Rate limits, generic 403 responses and network failures are not classified as expired login. `Check status` checks locally recognized credentials; it is not an authenticated API health check and does not prove an existing token is still valid.
 
-Paseo 0.14's published SDK still exposes `server.on("agent.turn_ended")`; this plugin uses that installed contract. Newer documentation also describes a renamed `addHook` API. Compatibility is pinned to 0.14.x until that migration is verified.
+The lifecycle observers use `server.on("agent.turn_ended")` and `server.on("agent.archived")`, supported by the 0.14 and 0.15 SDKs. The plugin is typechecked against SDK 0.15.4. The manifest sets a minimum version without an upper bound; newer releases are accepted unless a specific incompatibility is confirmed.
 
 ## Data and lifecycle
 

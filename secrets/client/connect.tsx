@@ -163,9 +163,9 @@ function ConnectForm({ host, theme, layout, saved, queryKey }: ConnectFormProps)
     <View style={styles.body}>
       <View style={styles.card}>
         <Text style={styles.muted}>
-          Share items as single-use or reusable grants without exposing their values to the agent. Listing returns
-          metadata only. Plaintext access separately permits full item reads and writes whose
-          results include secret values in agent context.
+          Share items as single-use or reusable grants without exposing their values to the agent.
+          Listing returns metadata only. Plaintext access separately permits full item reads and
+          writes whose results include secret values in agent context.
         </Text>
         <Text style={styles.text}>
           {saved.configured ? `${access}: ${saved.url}` : "Not configured"}
