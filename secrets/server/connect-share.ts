@@ -4,7 +4,7 @@ import type { OnePasswordConnect } from "./connect.js";
 import type { SecretsBroker } from "./broker.js";
 import { grantNotification, type Grant, type Secret } from "../shared/contracts.js";
 
-const itemSchema = z.object({
+export const itemSchema = z.object({
   id: connectIdSchema,
   vault: z.object({ id: connectIdSchema }),
   fields: z.array(

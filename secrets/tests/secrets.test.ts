@@ -155,6 +155,7 @@ test("MCP discovers the execution tool and returns only redacted output from the
       "run_with_secrets",
       "onepassword_list_vaults",
       "onepassword_list_items",
+      "onepassword_list_fields",
       "onepassword_get_item",
       "onepassword_create_item",
       "onepassword_replace_item",

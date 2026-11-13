@@ -6,7 +6,7 @@ import {
   type SecretRequestInput,
 } from "../shared/contracts.js";
 import { SecretsError } from "./errors.js";
-import { executionSchema } from "./runtime.js";
+import { executionSchema, executeWithSecrets, executionDescription } from "./execution.js";
 import type { SecretsBroker } from "./broker.js";
 import { connectTools, type OnePasswordConnect } from "./connect.js";
 
@@ -57,16 +57,13 @@ export function privateAgentTools(deps: {
     }),
     defineAgentTool({
       name: "run_with_secrets",
-      description:
-        "Use a grant belonging to this agent. Supply executable and argv; text values and private file paths are injected into its child environment. Never print, encode, persist or transmit credentials except as needed for the authorized task. Text-only output is masked; all image/file output is held for review. Runs for at most 120 seconds with 1 MiB output. Failed executions consume one-use grants; reusable grants remain available until expiry or revocation. Never retry execution automatically.",
+      description: executionDescription,
       input: z.object(executionSchema).strict(),
       execute: (input, context) =>
         answer(async () => {
-          const result = await deps.broker.execute({
-            id: input.grantId,
+          const result = await executeWithSecrets(deps.broker, deps.connect, input, {
             agentId: context.agent.id,
-            executable: input.executable,
-            args: input.args,
+            cwd: context.agent.cwd,
             signal: context.signal,
           });
           if (result.outputId)

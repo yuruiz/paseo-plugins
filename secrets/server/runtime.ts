@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { executionSchema, executeWithSecrets, executionDescription } from "./execution.js";
 import { SecretsBroker, SecretsError } from "./broker.js";
 
 import { OnePasswordConnect, registerConnectTools } from "./connect.js";
@@ -15,23 +16,6 @@ import {
   type SecretRequest,
 } from "../shared/contracts.js";
 
-export const executionSchema = {
-  grantId: z.string().uuid().describe("The one-use grant ID supplied by the user in Paseo."),
-  executable: z
-    .string()
-    .min(1)
-    .max(4096)
-    .refine((value) => !value.includes("\0")),
-  args: z
-    .array(
-      z
-        .string()
-        .max(16_384)
-        .refine((value) => !value.includes("\0")),
-    )
-    .max(256)
-    .default([]),
-};
 const endpointSchema = z.object({ port: z.number().int().min(1).max(65535) });
 
 interface RuntimeOptions {
@@ -227,8 +211,7 @@ async function handleRequest({
     "run_with_secrets",
     {
       title: "Run with secrets",
-      description:
-        "Execute a command with the user's Paseo secrets grant. Values are injected into the child environment, never returned directly. Runs in the grant's agent working directory. Text-only output is buffered and exact values are masked. For grants containing images or files, ALL output is held for user review; only status and outputId are returned. Private file paths are injected as environment variables and deleted after execution. One-use grants are consumed even on failure; reusable grants remain available until expiry or revocation. Maximum execution: 120 seconds, 1 MiB output. Do not print, persist, encode or inspect credentials. Supply executable and argv; explicitly use sh -c for shell syntax. No interactive input or background services.",
+      description: executionDescription,
       inputSchema: executionSchema,
       annotations: {
         readOnlyHint: false,
@@ -237,14 +220,12 @@ async function handleRequest({
         openWorldHint: true,
       },
     },
-    async ({ grantId, executable, args }, extra) => {
+    async (executionInput, extra) => {
       extra.signal.addEventListener("abort", cancel, { once: true });
       if (extra.signal.aborted) controller.abort();
       try {
-        const result = await broker.execute({
-          id: grantId,
-          executable,
-          args,
+        const result = await executeWithSecrets(broker, connect, executionInput, {
+          cwd: process.cwd(),
           signal: controller.signal,
         });
         if (result.outputId && onOutput) {

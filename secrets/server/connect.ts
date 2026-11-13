@@ -12,6 +12,7 @@ import {
   connectItemSummarySchema,
 } from "../shared/onepassword.js";
 
+import { itemSchema as connectItemSchema } from "./connect-share.js";
 import { ConnectError } from "./errors.js";
 import { requestConnect } from "./connect-http.js";
 
@@ -206,7 +207,7 @@ export class OnePasswordConnect {
     const items = method === "GET" && /^vaults\/[a-zA-Z0-9_-]+\/items(?:\?.*)?$/.test(route);
     if (!vaults && !items && !this.configuration?.plaintextEnabled)
       throw new ConnectError(
-        "Plaintext access is disabled. Share an item as a single-use or reusable grant, or enable plaintext access in Secrets settings.",
+        "Plaintext access is disabled. Use run_with_secrets with Connect field references to use credentials without reading their values.",
       );
     const result = await this.request(method, route, body, signal);
     if (!vaults && !items) return result;
@@ -215,6 +216,19 @@ export class OnePasswordConnect {
       : z.array(connectItemSummarySchema).safeParse(result);
     if (!parsed.success) throw new ConnectError("Connect returned invalid metadata.");
     return parsed.data;
+  }
+
+  async readItem(vaultId: string, itemId: string, signal: AbortSignal) {
+    const result = await this.request(
+      "GET",
+      `vaults/${connectIdSchema.parse(vaultId)}/items/${connectIdSchema.parse(itemId)}`,
+      undefined,
+      signal,
+    );
+    const item = connectItemSchema.safeParse(result);
+    if (!item.success || item.data.id !== itemId || item.data.vault.id !== vaultId)
+      throw new ConnectError("Connect returned an invalid item.");
+    return item.data;
   }
 
   private async perform(
@@ -324,6 +338,32 @@ export function connectTools(connect: OnePasswordConnect) {
     ({ vaultId, filter }, { signal }) => {
       const query = filter ? `?filter=${encodeURIComponent(filter)}` : "";
       return call("GET", `vaults/${vaultId}/items${query}`, undefined, signal);
+    },
+  );
+  registerTool(
+    "onepassword_list_fields",
+    {
+      description:
+        "List field IDs and labels for a Connect item without values. Use these IDs in run_with_secrets connect references; no Share or grant is needed.",
+      inputSchema: { vaultId: id, itemId: id },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async ({ vaultId, itemId }, { signal }) => {
+      try {
+        const item = await connect.readItem(vaultId, itemId, signal);
+        const fields = item.fields.map((field) => ({ id: field.id, label: field.label }));
+        return { content: [{ type: "text" as const, text: JSON.stringify(fields) }] };
+      } catch {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: "Could not list Connect fields. Check Connect access and item IDs.",
+            },
+          ],
+        };
+      }
     },
   );
   registerTool(
